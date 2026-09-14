@@ -1,0 +1,5 @@
+# .gibwork/bounties.yaml
+# Each entry below becomes a Gibwork bounty when you run `gibwork-sync apply`.
+# id: your own stable key — do not change once created, it's how the tool
+#     tracks which file entry maps to which real Gibwork task.
+[]

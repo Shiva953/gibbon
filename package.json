@@ -1,0 +1,16 @@
+{
+  "name": "gibwork-hackathon-bot",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@gibwork/cli": "^0.2.4",
+    "@gibwork/sdk": "^0.2.0"
+  }
+}
