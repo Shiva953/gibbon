@@ -1,4 +1,5 @@
 import { EXIT } from '../lib/errors.js';
+import { emitJson } from '../lib/render.js';
 import { resolveOperation } from '../lib/resolve.js';
 import type { Resolution } from '../lib/resolve.js';
 import { assertStateMatches, loadState, saveState } from '../lib/state.js';
@@ -30,15 +31,19 @@ const SYMBOL: Record<Resolution['verdict'], string> = {
  * Exits 3 while anything is still in flight, so CI can gate on it.
  */
 export async function statusCommand(runtime: Runtime, options: StatusOptions): Promise<void> {
-  const { client, walletAddress, environment, credentialSource } = runtime;
+  const { client, walletAddress, environment, credentialSource, signal, output } = runtime;
 
   const state = loadState();
 
   if (state.pending.length === 0) {
     const tracked = Object.keys(state.tasks).length;
-    process.stdout.write(
-      `\nNo unresolved operations. ${tracked} bounty(s) tracked in .gibwork/state.json.\n\n`,
-    );
+    if (output.json) {
+      emitJson({ wallet: walletAddress, environment, resolved: [], pending: 0, tracked });
+    } else {
+      process.stdout.write(
+        `\nNo unresolved operations. ${tracked} bounty(s) tracked in .gibwork/state.json.\n\n`,
+      );
+    }
     return;
   }
 
@@ -48,38 +53,67 @@ export async function statusCommand(runtime: Runtime, options: StatusOptions): P
   try {
     entriesById = new Map(loadBounties(options.file).map((entry) => [entry.id, entry]));
   } catch {
-    process.stdout.write(`\n(could not read ${options.file}; resolving without it)\n`);
+    if (!output.json && !output.quiet) {
+      process.stdout.write(`\n(could not read ${options.file}; resolving without it)\n`);
+    }
   }
 
   assertStateMatches(state, walletAddress, environment);
 
-  process.stdout.write(
-    `\nwallet ${walletAddress}  ·  ${environment}  ·  credentials from ${credentialSource.kind}\n` +
-      `\nResolving ${state.pending.length} unresolved operation(s)...\n\n`,
-  );
+  if (!output.json && !output.quiet) {
+    process.stdout.write(
+      `\nwallet ${walletAddress}  ·  ${environment}  ·  credentials from ${credentialSource}\n` +
+        `\nResolving ${state.pending.length} unresolved operation(s)...\n\n`,
+    );
+  }
 
   let next: SyncState = state;
   const resolutions: Resolution[] = [];
 
   // Iterate a snapshot: `next` is rewritten as each operation settles.
   for (const op of [...state.pending]) {
-    const result = await resolveOperation(client, next, op, entriesById.get(op.id));
+    const result = await resolveOperation(client, next, op, entriesById.get(op.id), signal);
     next = result.state;
     resolutions.push(result.resolution);
 
-    const { verdict, detail } = result.resolution;
-    process.stdout.write(`  ${SYMBOL[verdict]} ${op.kind.padEnd(7)} ${op.id.padEnd(16)} ${detail}\n`);
-    process.stdout.write(`            task ${op.taskId ?? 'unknown'}\n`);
+    if (!output.json) {
+      const { verdict, detail } = result.resolution;
+      process.stdout.write(
+        `  ${SYMBOL[verdict]} ${op.kind.padEnd(7)} ${op.id.padEnd(16)} ${detail}\n`,
+      );
+      process.stdout.write(`            task ${op.taskId ?? 'unknown'}\n`);
+    }
   }
 
+  const asJson = (): Record<string, unknown> => ({
+    wallet: walletAddress,
+    environment,
+    dryRun: options.dryRun ?? false,
+    resolved: resolutions.map((r) => ({
+      id: r.op.id,
+      kind: r.op.kind,
+      taskId: r.op.taskId ?? null,
+      verdict: r.verdict,
+      detail: r.detail,
+      cleared: r.cleared,
+    })),
+    pending: next.pending.length,
+  });
+
   if (options.dryRun) {
-    process.stdout.write('\n--dry-run: .gibwork/state.json was not modified.\n\n');
+    if (output.json) emitJson(asJson());
+    else process.stdout.write('\n--dry-run: .gibwork/state.json was not modified.\n\n');
     return;
   }
 
   saveState(next);
 
   const stillPending = next.pending.length;
+  if (output.json) {
+    emitJson(asJson());
+    if (stillPending > 0) process.exitCode = EXIT.UNRESOLVED;
+    return;
+  }
   if (stillPending > 0) {
     process.stdout.write(
       `\n${stillPending} operation(s) still settling. ` +

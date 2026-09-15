@@ -1,160 +1,210 @@
-import { readFileSync } from 'node:fs';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createKeypairSigner } from '@gibwork/sdk/node';
 import { GibworkClient } from '@gibwork/sdk';
 import type { WalletSigner } from '@gibwork/sdk';
+import { createKeypairSigner } from '@gibwork/sdk/node';
 import type { Environment } from '../types.js';
+import { expandHome } from './config.js';
+import type { Profile } from './config.js';
 import { CliError, EXIT } from './errors.js';
+import { pinnedProductionFetch } from './productionOrigin.js';
 
 /**
- * Credential resolution, matching the safety rules @gibwork/cli follows:
+ * Credential resolution, matching @gibwork/cli's rules and safety posture.
  *
- *   1. --keypair <path>          (explicit, highest priority)
- *   2. GIBWORK_PRIVATE_KEY       (env var holding the key material)
- *   3. GIBWORK_KEYPAIR_PATH      (env var holding a path to a keypair file)
+ * Priority, with ambiguity treated as an error rather than a silent winner:
+ *   1. --keypair <path>            (mutually exclusive with --private-key-stdin)
+ *   2. --private-key-stdin         (piped only; never prompts, never echoes)
+ *   3. GIBWORK_KEYPAIR_PATH        (error if GIBWORK_PRIVATE_KEY is also set)
+ *   4. GIBWORK_PRIVATE_KEY
+ *   5. the selected profile's keypair-path
  *
- * Two things this deliberately never does:
- *   - accept a raw private key as a bare CLI argument (it would land in shell
- *     history and in `ps` output for every other user on the machine), and
- *   - load .env implicitly. The caller opts in explicitly, e.g.
- *     `node --env-file=.env` or `bun --env-file=.env`.
+ * Two things this deliberately never does: accept a raw private key as a bare
+ * CLI argument (shell history and `ps` expose it), and load .env implicitly.
  */
 
-export interface CredentialOptions {
-  /** Path to a Solana keypair JSON file, from --keypair. */
-  keypair?: string;
-  /** Target environment. Defaults to stage; production is always opt-in. */
-  env?: Environment;
-  /** Request timeout in ms, passed through to the SDK. */
-  timeoutMs?: number;
-}
+export const MAX_KEY_BYTES = 16 * 1024;
 
-/** Where the key came from, safe to print. Never contains key material. */
-export type CredentialSource =
-  | { kind: 'keypair-flag'; path: string }
-  | { kind: 'env-private-key' }
-  | { kind: 'env-keypair-path'; path: string };
+/** A printable description of where the key came from. Never key material. */
+export type CredentialSource = string;
 
 export class CredentialError extends CliError {
   override readonly name = 'CredentialError';
-  constructor(message: string, details?: Record<string, unknown>) {
-    super(message, 'CREDENTIAL_ERROR', EXIT.CREDENTIAL, details);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'CREDENTIAL_ERROR', EXIT.CREDENTIAL, undefined, options);
   }
 }
 
-const SETUP_HINT = [
-  'No Gibwork wallet credentials found. Provide exactly one of:',
-  '  --keypair <path>              path to a Solana keypair JSON file',
-  '  GIBWORK_PRIVATE_KEY=...       base58 key, or a JSON array of bytes',
-  '  GIBWORK_KEYPAIR_PATH=<path>   path to a Solana keypair JSON file',
-  '',
-  'gibwork-sync never reads .env on its own. Load it explicitly:',
-  '  node --env-file=.env $(which gibwork-sync) plan',
-].join('\n');
+export interface CredentialOptions {
+  keypair?: string;
+  privateKeyStdin?: boolean;
+}
 
-function readKeypairFile(path: string): string {
-  const absolute = resolve(path);
-  let raw: string;
-  try {
-    raw = readFileSync(absolute, 'utf8');
-  } catch (cause) {
-    // Report the path but never the contents.
-    const reason = cause instanceof Error ? cause.message : 'unreadable';
-    throw new CredentialError(`Could not read keypair file at ${absolute}: ${reason}`);
-  }
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) {
-    throw new CredentialError(`Keypair file at ${absolute} is empty.`);
-  }
-  return trimmed;
+export interface ResolvedCredential {
+  signer: WalletSigner;
+  walletAddress: string;
+  source: CredentialSource;
 }
 
 /**
- * Resolves the signing key without ever returning it alongside anything that
- * gets logged. The returned `source` is the printable half.
+ * Loads a keypair file with the checks the official CLI performs.
+ *
+ * realpath defeats symlink redirection, the mode check refuses a key any other
+ * user can read, and the size bound stops a mistyped path from pulling a large
+ * file into memory as "a key".
  */
-export function resolveCredentials(options: CredentialOptions = {}): {
-  privateKey: string;
-  source: CredentialSource;
-} {
+async function loadKeypairFile(pathValue: string): Promise<{ path: string; contents: Buffer }> {
+  const requested = resolve(expandHome(pathValue.trim()));
+
+  let path: string;
+  let metadata: Awaited<ReturnType<typeof stat>>;
+  try {
+    path = await realpath(requested);
+    metadata = await stat(path);
+  } catch (cause) {
+    throw new CredentialError(`Could not access keypair file at ${requested}.`, { cause });
+  }
+
+  if (!metadata.isFile()) {
+    throw new CredentialError(`Keypair path is not a regular file: ${path}`);
+  }
+  if (metadata.size > MAX_KEY_BYTES) {
+    throw new CredentialError(`Keypair file exceeds the ${MAX_KEY_BYTES}-byte limit.`);
+  }
+  // 0o77: any permission at all for group or other.
+  if (process.platform !== 'win32' && (metadata.mode & 0o77) !== 0) {
+    throw new CredentialError(
+      `Keypair file permissions are too broad: ${path}. Run chmod 600 on the file.`,
+    );
+  }
+
+  const contents = await readFile(path);
+  if (contents.byteLength > MAX_KEY_BYTES) {
+    contents.fill(0);
+    throw new CredentialError(`Keypair file exceeds the ${MAX_KEY_BYTES}-byte limit.`);
+  }
+  return { path, contents };
+}
+
+async function readBoundedStdin(limit: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of process.stdin) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.byteLength;
+    if (total > limit) {
+      for (const previous of chunks) previous.fill(0);
+      buffer.fill(0);
+      throw new CredentialError(`Private key exceeds the ${limit}-byte limit.`);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+/** Resolves the signing wallet. The key never leaves this function as a value. */
+export async function resolveCredential(
+  options: CredentialOptions,
+  profile: Profile = {},
+): Promise<ResolvedCredential> {
+  if (options.keypair && options.privateKeyStdin) {
+    throw new CredentialError('Use either --keypair or --private-key-stdin, not both.');
+  }
+
+  let privateKey: string | undefined;
+  let source: string | undefined;
+  let mutableBuffer: Buffer | undefined;
+
   if (options.keypair) {
-    return {
-      privateKey: readKeypairFile(options.keypair),
-      source: { kind: 'keypair-flag', path: resolve(options.keypair) },
-    };
+    const loaded = await loadKeypairFile(options.keypair);
+    privateKey = loaded.contents.toString('utf8').trim();
+    mutableBuffer = loaded.contents;
+    source = loaded.path;
+  } else if (options.privateKeyStdin) {
+    if (process.stdin.isTTY) {
+      throw new CredentialError(
+        '--private-key-stdin requires piped input; it will not echo or prompt for a key.',
+      );
+    }
+    mutableBuffer = await readBoundedStdin(MAX_KEY_BYTES);
+    privateKey = mutableBuffer.toString('utf8').trim();
+    source = 'stdin';
+  } else {
+    const environmentPath = process.env.GIBWORK_KEYPAIR_PATH?.trim();
+    const environmentKey = process.env.GIBWORK_PRIVATE_KEY?.trim();
+
+    // Ambiguity about which wallet signs must never resolve silently.
+    if (environmentPath && environmentKey) {
+      throw new CredentialError(
+        'Both GIBWORK_KEYPAIR_PATH and GIBWORK_PRIVATE_KEY are set; keep only one.',
+      );
+    }
+
+    if (environmentPath) {
+      const loaded = await loadKeypairFile(environmentPath);
+      privateKey = loaded.contents.toString('utf8').trim();
+      mutableBuffer = loaded.contents;
+      source = `GIBWORK_KEYPAIR_PATH (${loaded.path})`;
+    } else if (environmentKey) {
+      privateKey = environmentKey;
+      source = 'GIBWORK_PRIVATE_KEY';
+      // Drop it from the environment so nothing spawned later inherits the key.
+      delete process.env.GIBWORK_PRIVATE_KEY;
+    } else if (profile.keypairPath) {
+      const loaded = await loadKeypairFile(profile.keypairPath);
+      privateKey = loaded.contents.toString('utf8').trim();
+      mutableBuffer = loaded.contents;
+      source = `profile keypair (${loaded.path})`;
+    } else {
+      throw new CredentialError(
+        'No wallet configured. Use --keypair, --private-key-stdin, GIBWORK_KEYPAIR_PATH, ' +
+          'GIBWORK_PRIVATE_KEY, or set keypair-path in a profile.\n\n' +
+          'gibwork-sync never reads .env on its own. Load it explicitly:\n' +
+          '  node --env-file=.env $(which gibwork-sync) plan',
+      );
+    }
   }
 
-  const inlineKey = process.env.GIBWORK_PRIVATE_KEY?.trim();
-  if (inlineKey) {
-    return { privateKey: inlineKey, source: { kind: 'env-private-key' } };
+  if (!privateKey) {
+    mutableBuffer?.fill(0);
+    throw new CredentialError('The private key is empty.');
   }
 
-  const keypairPath = process.env.GIBWORK_KEYPAIR_PATH?.trim();
-  if (keypairPath) {
-    return {
-      privateKey: readKeypairFile(keypairPath),
-      source: { kind: 'env-keypair-path', path: resolve(keypairPath) },
-    };
+  try {
+    const signer = createKeypairSigner(privateKey);
+    return { signer, walletAddress: signer.publicKey.toBase58(), source };
+  } catch (cause) {
+    if (cause instanceof CliError) throw cause;
+    throw new CredentialError('Could not read the private key.', { cause });
+  } finally {
+    mutableBuffer?.fill(0);
   }
-
-  throw new CredentialError(SETUP_HINT);
 }
 
-/** A one-line, key-free description of where credentials came from. */
-export function describeCredentialSource(source: CredentialSource): string {
-  switch (source.kind) {
-    case 'keypair-flag':
-      return `keypair file (--keypair ${source.path})`;
-    case 'env-private-key':
-      return 'GIBWORK_PRIVATE_KEY';
-    case 'env-keypair-path':
-      return `keypair file (GIBWORK_KEYPAIR_PATH=${source.path})`;
-  }
-}
-
-/** Resolves the target environment. Stage unless production is asked for. */
+/** Stage unless production is asked for by name. */
 export function resolveEnvironment(env?: Environment): Environment {
   return env === 'production' ? 'production' : 'stage';
 }
 
-/**
- * Builds an SDK client AND hands back the signer that backs it.
- *
- * Returning the signer is not incidental. `GibworkClient` takes a signer in its
- * constructor, passes it to its two resources, and never exposes it again — but
- * `signPreparedTransaction(serializedTransaction, signer)` needs one. Without a
- * reference of our own we would be forced onto the all-in-one `tasks.create()`,
- * which runs prepare -> sign -> submit internally and only returns at the end.
- * That path is unrecoverable: `CreateTaskInput` carries no idempotency key, so
- * a process killed mid-flight leaves a possibly-funded task whose UUID exists
- * nowhere on disk. Keeping the signer is what buys us the split flow, and with
- * it the taskId that `prepareCreate` hands over before any money moves.
- *
- * The environment is client-wide and immutable after construction, so prepare
- * and submit for one operation can never straddle stage and production.
- */
-export function createClient(options: CredentialOptions = {}): {
-  client: GibworkClient;
+export interface ClientOptions {
   signer: WalletSigner;
-  walletAddress: string;
   environment: Environment;
-  credentialSource: CredentialSource;
-} {
-  const { privateKey, source } = resolveCredentials(options);
-  const environment = resolveEnvironment(options.env);
+  apiUrl: string;
+  timeoutMs?: number;
+}
 
-  const signer = createKeypairSigner(privateKey);
-  const client = new GibworkClient({
-    signer,
-    production: environment === 'production',
+/**
+ * Builds the SDK client. The environment is client-wide and immutable, so
+ * prepare and submit for one operation can never straddle stage and production.
+ * Production additionally gets the pinned fetch, which refuses redirects and
+ * any non-official origin.
+ */
+export function buildClient(options: ClientOptions): GibworkClient {
+  return new GibworkClient({
+    signer: options.signer,
+    production: options.environment === 'production',
+    baseUrl: options.apiUrl,
+    ...(options.environment === 'production' ? { fetch: pinnedProductionFetch } : {}),
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
   });
-
-  return {
-    client,
-    signer,
-    walletAddress: signer.publicKey.toBase58(),
-    environment,
-    credentialSource: source,
-  };
 }

@@ -66,3 +66,63 @@ export function renderPending(pending: PendingOperation[]): string {
   lines.push('');
   return lines.join('\n');
 }
+
+/* ------------------------------------------------------------------ *
+ * Machine-readable output
+ *
+ * The envelope matches @gibwork/cli exactly — {"ok":true,"data":...} on
+ * success, {"ok":false,"error":{code,message}} on failure — so a script can
+ * parse either tool's output with the same code path.
+ * ------------------------------------------------------------------ */
+
+/** Writes one success envelope. Always a single line, always newline-terminated. */
+export function emitJson(data: unknown): void {
+  process.stdout.write(`${JSON.stringify({ ok: true, data })}\n`);
+}
+
+/** A stable, serializable view of a plan. */
+export function planToJson(plan: Plan): Record<string, unknown> {
+  return {
+    summary: {
+      create: plan.toCreate.length,
+      update: plan.toUpdate.length,
+      refund: plan.toRefund.length,
+      blocked: plan.blocked.length,
+      unchanged: plan.unchanged.length,
+    },
+    create: plan.toCreate.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      amount: entry.amount,
+    })),
+    update: plan.toUpdate.map((update) => ({
+      id: update.entry.id,
+      taskId: update.taskId,
+      changes: update.changes,
+    })),
+    refund: plan.toRefund.map((refund) => ({
+      id: refund.id,
+      taskId: refund.taskId,
+      ...(refund.title ? { title: refund.title } : {}),
+    })),
+    blocked: plan.blocked.map((block) => ({
+      id: block.id,
+      taskId: block.taskId,
+      fields: block.fields,
+      reason: block.reason,
+    })),
+    unchanged: plan.unchanged.map((entry) => entry.id),
+  };
+}
+
+/** A stable, serializable view of unresolved operations. */
+export function pendingToJson(pending: PendingOperation[]): Record<string, unknown>[] {
+  return pending.map((op) => ({
+    id: op.id,
+    kind: op.kind,
+    taskId: op.taskId ?? null,
+    intentId: op.intentId ?? null,
+    startedAt: op.startedAt,
+    ...(op.lastKnownStatus ? { lastKnownStatus: op.lastKnownStatus } : {}),
+  }));
+}

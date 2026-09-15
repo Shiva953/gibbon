@@ -1,12 +1,12 @@
 import { createInterface } from 'node:readline/promises';
 import { GibworkAmbiguousSubmitError } from '@gibwork/sdk';
 import { computePlan } from '../lib/diff.js';
-import { EXIT, normalizeError } from '../lib/errors.js';
+import { CliError, EXIT, normalizeError } from '../lib/errors.js';
 import { execCreate, execRefund, execUpdate } from '../lib/executor.js';
 import type { ExecutorDeps } from '../lib/executor.js';
 import { fetchLiveTasks } from '../lib/live.js';
 import { Pacer } from '../lib/pacer.js';
-import { renderPending, renderPlan } from '../lib/render.js';
+import { emitJson, pendingToJson, planToJson, renderPending, renderPlan } from '../lib/render.js';
 import { assertStateMatches, loadState, saveState, stampState } from '../lib/state.js';
 import { loadBounties } from '../lib/yaml.js';
 import type { Runtime } from '../runtime.js';
@@ -77,14 +77,29 @@ function reportFailure(error: unknown): void {
  * network and ambiguous-submit failures.
  */
 export async function applyCommand(runtime: Runtime, options: ApplyOptions): Promise<void> {
-  const { client, signer, walletAddress, environment, credentialSource } = runtime;
+  const { client, signer, walletAddress, environment, credentialSource, signal, output } = runtime;
+
+  // A prompt would corrupt the JSON stream, so automation must say so up front.
+  if (output.json && !options.yes) {
+    throw new CliError('--json requires --yes, because apply cannot prompt.', 'USAGE_ERROR', EXIT.USAGE);
+  }
 
   const initial = loadState();
 
   // (1) The watchdog gate. Before any network call, before any money.
   if (initial.pending.length > 0) {
-    process.stdout.write(renderPending(initial.pending));
-    process.stderr.write('apply refused: resolve the operations above first.\n');
+    if (output.json) {
+      emitJson({
+        wallet: walletAddress,
+        environment,
+        applied: false,
+        reason: 'unresolved-operations',
+        pending: pendingToJson(initial.pending),
+      });
+    } else {
+      process.stdout.write(renderPending(initial.pending));
+      process.stderr.write('apply refused: resolve the operations above first.\n');
+    }
     process.exitCode = EXIT.UNRESOLVED;
     return;
   }
@@ -92,16 +107,21 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
   const desired = loadBounties(options.file);
   assertStateMatches(initial, walletAddress, environment);
 
-  process.stdout.write(
-    `\nwallet ${walletAddress}  ·  ${environment}  ·  credentials from ${credentialSource.kind}\n`,
-  );
+  if (!output.json && !output.quiet) {
+    process.stdout.write(
+      `\nwallet ${walletAddress}  ·  ${environment}  ·  credentials from ${credentialSource}\n`,
+    );
+  }
 
   // (2) Recompute. The plan you confirm is the plan that runs.
-  const { live } = await fetchLiveTasks(client, initial);
+  const { live } = await fetchLiveTasks(client, initial, signal);
   const plan = computePlan({ desired, live, state: initial });
-  process.stdout.write(renderPlan(plan));
+  if (!output.json) process.stdout.write(renderPlan(plan));
 
   if (isNoOp(plan)) {
+    if (output.json) {
+      emitJson({ wallet: walletAddress, environment, applied: true, ...planToJson(plan) });
+    }
     if (plan.blocked.length > 0) process.exitCode = EXIT.BLOCKED;
     return;
   }
@@ -121,13 +141,16 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
   const deps: ExecutorDeps = {
     client,
     signer,
-    pacer: new Pacer(),
+    pacer: new Pacer(signal ? { signal } : {}),
+    ...(signal ? { signal } : {}),
     save: (next) => saveState(next),
-    log: (message) => process.stdout.write(`  ${message}\n`),
+    ...(output.json || output.quiet
+      ? {}
+      : { log: (message: string) => process.stdout.write(`  ${message}\n`) }),
   };
 
   let unresolved = 0;
-  process.stdout.write('\n');
+  if (!output.json && !output.quiet) process.stdout.write('\n');
 
   try {
     // (4) Cheap and unsigned first.
@@ -149,25 +172,36 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
     }
   } catch (error) {
     // The executor already persisted a marker before anything was signed.
-    reportFailure(error);
+    if (!output.json) reportFailure(error);
     process.exitCode = normalizeError(error).exitCode;
     return;
   }
 
-  process.stdout.write(
-    `\nApplied: ${plan.toCreate.length} created, ${plan.toUpdate.length} updated, ` +
-      `${plan.toRefund.length} refunded.\n`,
-  );
-
-  if (unresolved > 0) {
+  if (output.json) {
+    emitJson({
+      wallet: walletAddress,
+      environment,
+      applied: true,
+      created: plan.toCreate.length,
+      updated: plan.toUpdate.length,
+      refunded: plan.toRefund.length,
+      unresolved,
+      blocked: plan.blocked.length,
+    });
+  } else {
     process.stdout.write(
-      `\n${unresolved} operation(s) did not reach a confirmed state. ` +
-        'Run `gibwork-sync status` to resolve them.\n',
+      `\nApplied: ${plan.toCreate.length} created, ${plan.toUpdate.length} updated, ` +
+        `${plan.toRefund.length} refunded.\n`,
     );
-    process.exitCode = EXIT.UNRESOLVED;
-  } else if (plan.blocked.length > 0) {
-    process.exitCode = EXIT.BLOCKED;
+    if (unresolved > 0) {
+      process.stdout.write(
+        `\n${unresolved} operation(s) did not reach a confirmed state. ` +
+          'Run `gibwork-sync status` to resolve them.\n',
+      );
+    }
+    process.stdout.write('\n');
   }
 
-  process.stdout.write('\n');
+  if (unresolved > 0) process.exitCode = EXIT.UNRESOLVED;
+  else if (plan.blocked.length > 0) process.exitCode = EXIT.BLOCKED;
 }

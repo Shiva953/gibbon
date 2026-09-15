@@ -8,13 +8,28 @@ import type { Environment } from './types.js';
 const VERSION = '0.1.0';
 
 interface GlobalOptions {
+  profile?: string;
+  environment?: Environment;
+  apiUrl?: string;
+  timeout?: number;
   keypair?: string;
-  environment: Environment;
+  privateKeyStdin?: boolean;
+  allowInsecureHttp?: boolean;
+  json?: boolean;
+  quiet?: boolean;
 }
 
 function parseEnvironment(value: string): Environment {
   if (value === 'stage' || value === 'production') return value;
   throw new InvalidArgumentError("Environment must be either 'stage' or 'production'.");
+}
+
+function parseTimeout(value: string): number {
+  const ms = Number(value);
+  if (!Number.isInteger(ms) || ms <= 0) {
+    throw new InvalidArgumentError('Timeout must be a positive whole number of milliseconds.');
+  }
+  return ms;
 }
 
 const program = new Command();
@@ -26,19 +41,36 @@ program
       'to reconcile it with the live platform.',
   )
   .version(VERSION)
-  /* Credentials are global: every command that touches the network needs them.
-     A raw private key is never accepted as an argument — only a file path or
-     an environment variable. See src/lib/gibworkClient.ts. */
-  .option('-k, --keypair <path>', 'path to a Solana keypair JSON file')
-  /* Spelled the same as @gibwork/cli's --environment so muscle memory carries
-     over. The short forms are standalone conveniences the official CLI does
-     not define; they would be dropped if these commands were ever upstreamed. */
-  .option(
-    '-e, --environment <environment>',
-    'target environment: stage or production',
-    parseEnvironment,
-    'stage' as Environment,
-  );
+  /* Global options are spelled exactly as @gibwork/cli spells them, and resolve
+     flag -> environment variable -> profile -> default, so a wallet configured
+     with `gibwork config set` works here untouched. A raw private key is never
+     accepted as an argument: shell history and `ps` expose it. */
+  .option('--profile <name>', 'configuration profile')
+  .option('--environment <environment>', 'Gibwork API environment', parseEnvironment)
+  .option('--api-url <url>', 'override the Gibwork SDK API URL')
+  .option('--timeout <milliseconds>', 'request timeout in milliseconds', parseTimeout)
+  .option('--keypair <path>', 'read a private key from an owner-only file')
+  .option('--private-key-stdin', 'read a private key from piped stdin; never from an argument')
+  .option('--json', 'emit stable JSON on stdout')
+  .option('--quiet', 'suppress progress messages')
+  .option('--no-color', 'disable color output')
+  .option('--allow-insecure-http', 'allow a non-loopback API URL to use plain HTTP')
+  /* Standalone shorthands the official CLI does not define. They would be
+     dropped if these commands were ever upstreamed. */
+  .option('-e, --env <environment>', 'alias for --environment', parseEnvironment)
+  .option('-k, --keypair-file <path>', 'alias for --keypair');
+
+/* Ctrl-C aborts in-flight work rather than killing the process mid-operation.
+   State is written with temp-file + rename before anything is signed, so an
+   abort is always recoverable with `gibwork-sync status`. */
+const controller = new AbortController();
+let cancelling = false;
+process.on('SIGINT', () => {
+  if (cancelling) process.exit(EXIT.CANCELLED);
+  cancelling = true;
+  controller.abort();
+  process.stderr.write('\nCancelling… press Ctrl-C again to force.\n');
+});
 
 /* Must precede registerSync: commander copies _exitCallback into subcommands
    when they are created, so overriding afterwards would leave them calling
@@ -46,10 +78,21 @@ program
 program.exitOverride();
 
 registerSync(program, async () => {
-  const opts = program.opts<GlobalOptions>();
+  const opts = program.opts<GlobalOptions & { env?: Environment; keypairFile?: string }>();
+  const keypair = opts.keypair ?? opts.keypairFile;
+  const environment = opts.environment ?? opts.env;
+
   return createRuntime({
-    ...(opts.keypair ? { keypair: opts.keypair } : {}),
-    environment: opts.environment,
+    ...(keypair ? { keypair } : {}),
+    ...(opts.privateKeyStdin ? { privateKeyStdin: true } : {}),
+    ...(opts.profile ? { profile: opts.profile } : {}),
+    ...(environment ? { environment } : {}),
+    ...(opts.apiUrl ? { apiUrl: opts.apiUrl } : {}),
+    ...(opts.timeout ? { timeout: opts.timeout } : {}),
+    ...(opts.allowInsecureHttp ? { allowInsecureHttp: true } : {}),
+    json: opts.json ?? false,
+    quiet: opts.quiet ?? false,
+    signal: controller.signal,
   });
 });
 
@@ -67,9 +110,19 @@ async function main(): Promise<void> {
       return;
     }
 
-    const { code, message } = normalizeError(error);
-    process.stderr.write(`\ngibwork-sync [${code}]: ${message}\n`);
-    process.exitCode = normalizeError(error).exitCode;
+    if (cancelling) {
+      process.exitCode = EXIT.CANCELLED;
+      return;
+    }
+
+    const { code, exitCode, message } = normalizeError(error);
+    const json = process.argv.includes('--json');
+    process.stderr.write(
+      json
+        ? `${JSON.stringify({ ok: false, error: { code, message } })}\n`
+        : `\ngibwork-sync [${code}]: ${message}\n`,
+    );
+    process.exitCode = exitCode;
   }
 }
 

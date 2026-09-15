@@ -124,17 +124,40 @@ bun run build
 
 ### Credentials
 
-Resolved in this order:
+gibwork-sync reads the **same configuration file `@gibwork/cli` writes**, so a
+wallet you already set up with `gibwork config set` works here untouched:
 
-1. `--keypair <path>` — path to a Solana keypair JSON file
-2. `GIBWORK_PRIVATE_KEY` — base58 key, or a JSON array of 32/64 bytes
-3. `GIBWORK_KEYPAIR_PATH` — path to a keypair file
+```bash
+gibwork config set keypair-path ~/.config/gibwork/id.json --profile stage
+gibwork-sync plan --profile stage        # no other flags needed
+```
 
-Two deliberate safety rules:
+Resolution is **flag → environment variable → profile → default** for every
+setting, matching the official CLI exactly. For credentials specifically:
+
+1. `--keypair <path>` — an owner-only keypair file
+2. `--private-key-stdin` — piped only; never prompts, never echoes
+3. `GIBWORK_KEYPAIR_PATH`
+4. `GIBWORK_PRIVATE_KEY` — base58, or a JSON array of 32/64 bytes
+5. the selected profile's `keypair-path`
+
+Safety rules, all matching `@gibwork/cli`:
 
 - **A raw private key is never accepted as a command-line argument.** It would
   land in your shell history and in `ps` output for every other user on the
   machine.
+- **Ambiguity is an error, not a silent winner.** Setting both
+  `GIBWORK_KEYPAIR_PATH` and `GIBWORK_PRIVATE_KEY` fails rather than quietly
+  picking one — you should never be unsure which wallet signed.
+- **Keypair files are checked before they are read**: symlinks resolved, must
+  be a regular file, size-bounded, and rejected unless the mode is `0600` or
+  stricter. The key buffer is zeroed after the signer is built, and
+  `GIBWORK_PRIVATE_KEY` is deleted from the environment so nothing spawned
+  later inherits it.
+- **Production can only talk to the official API origin.** `--api-url` is
+  available for stage, but in production a non-official origin, embedded
+  credentials, or any redirect is refused — checked on both the request and the
+  response.
 - **`.env` is never loaded implicitly.** Opt in explicitly:
 
 ```bash
@@ -160,8 +183,22 @@ gibwork-sync import  [-f, --file <path>]              # bootstrap from live stat
 gibwork-sync status  [-f, --file <path>] [--dry-run]  # resolve interrupted runs
 ```
 
-Global: `-k, --keypair <path>`, `-e, --environment <stage|production>` (spelled
-the same as `@gibwork/cli`, so muscle memory carries across).
+Global flags, spelled exactly as `@gibwork/cli` spells them:
+
+```
+--profile <name>           --keypair <path>          --json
+--environment <env>        --private-key-stdin       --quiet
+--api-url <url>            --allow-insecure-http     --no-color
+--timeout <milliseconds>
+```
+
+`--json` emits the same envelope the official CLI does — `{"ok":true,"data":…}`
+on success, `{"ok":false,"error":{"code","message"}}` on failure — so a script
+can parse either tool with one code path. `apply --json` requires `--yes`,
+since a prompt would corrupt the stream.
+
+Ctrl-C aborts in-flight work and exits `130`. State is written before anything
+is signed, so an abort is always recoverable with `status`.
 
 **Exit codes** — `apply` and `plan` are designed to be gated on in CI:
 

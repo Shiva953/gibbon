@@ -63,10 +63,7 @@ function harness(
   const deps: ExecutorDeps = {
     client: { tasks } as unknown as GibworkClient,
     signer: {} as WalletSigner,
-    pacer: new Pacer(
-      async () => {},
-      () => (clock += 1000),
-    ),
+    pacer: new Pacer({ sleep: async () => {}, now: () => (clock += 1000) }),
     save: (state) => {
       calls.push(state.pending.length > 0 ? 'save(pending)' : 'save(clean)');
       saved.push(structuredClone(state));

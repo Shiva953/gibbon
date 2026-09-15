@@ -40,6 +40,7 @@ export async function resolveOperation(
   state: SyncState,
   op: PendingOperation,
   entry?: BountyEntry,
+  signal?: AbortSignal,
 ): Promise<{ state: SyncState; resolution: Resolution }> {
   // A marker with no taskId predates the barrier, or prepare itself failed.
   // Nothing was ever allocated, so nothing can have landed.
@@ -57,7 +58,7 @@ export async function resolveOperation(
 
   let details: TaskDetails;
   try {
-    details = await client.tasks.get(op.taskId);
+    details = await client.tasks.get(op.taskId, signal ? { signal } : undefined);
   } catch (error) {
     if (!isNotFound(error)) throw error;
 

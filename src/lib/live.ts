@@ -6,12 +6,16 @@ import { toLiveTask } from './normalize.js';
 const PAGE_LIMIT = 50;
 
 /** Walks every page of tasks.list for the signing wallet. */
-export async function listAllSummaries(client: GibworkClient): Promise<WalletTaskSummary[]> {
+export async function listAllSummaries(
+  client: GibworkClient,
+  signal?: AbortSignal,
+): Promise<WalletTaskSummary[]> {
   const all: WalletTaskSummary[] = [];
+  const options = signal ? { signal } : undefined;
   let page = 1;
 
   for (;;) {
-    const response = await client.tasks.list({ page, limit: PAGE_LIMIT });
+    const response = await client.tasks.list({ page, limit: PAGE_LIMIT }, options);
     all.push(...response.results);
     if (response.results.length === 0 || page >= response.lastPage) break;
     page += 1;
@@ -35,8 +39,10 @@ export async function listAllSummaries(client: GibworkClient): Promise<WalletTas
 export async function fetchLiveTasks(
   client: GibworkClient,
   state: SyncState,
+  signal?: AbortSignal,
 ): Promise<{ live: LiveTask[]; summaries: WalletTaskSummary[]; missing: string[] }> {
-  const summaries = await listAllSummaries(client);
+  const options = signal ? { signal } : undefined;
+  const summaries = await listAllSummaries(client, signal);
   const summaryById = new Map(summaries.map((summary) => [summary.id, summary]));
 
   const trackedIds = [...new Set(Object.values(state.tasks).map((task) => task.taskId))];
@@ -45,7 +51,7 @@ export async function fetchLiveTasks(
 
   for (const taskId of trackedIds) {
     try {
-      const details = await client.tasks.get(taskId);
+      const details = await client.tasks.get(taskId, options);
       live.push(toLiveTask(details, summaryById.get(taskId)));
     } catch (error) {
       if (error instanceof GibworkApiError && error.status === 404) {

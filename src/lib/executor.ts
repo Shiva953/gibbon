@@ -17,7 +17,14 @@ export interface ExecutorDeps {
    * this safe — that the pending marker reaches disk BEFORE a signature exists.
    */
   sign?: (serializedTransaction: string, signer: WalletSigner) => Promise<string>;
+  /** Cancellation. Aborting before a submit is safe; after it, `status` recovers. */
+  signal?: AbortSignal;
   log?: (message: string) => void;
+}
+
+/** SDK RequestOptions, omitted entirely when there is no signal to pass. */
+function req(deps: ExecutorDeps): { signal: AbortSignal } | undefined {
+  return deps.signal ? { signal: deps.signal } : undefined;
 }
 
 /** 'confirmed' means we know it landed. 'unresolved' means only `status` can say. */
@@ -66,7 +73,7 @@ export async function execUpdate(
   state: SyncState,
   planned: PlannedUpdate,
 ): Promise<ExecResult> {
-  await deps.client.tasks.update(planned.taskId, toUpdateInput(planned));
+  await deps.client.tasks.update(planned.taskId, toUpdateInput(planned), req(deps));
 
   const next = recordTask(state, planned.entry.id, planned.taskId, planned.entry);
   deps.save(next);
@@ -90,7 +97,7 @@ export async function execCreate(
 ): Promise<ExecResult> {
   // (1) PREPARE — no funds move. Yields taskId + intentId.
   await deps.pacer.prepare();
-  const prepared = await deps.client.tasks.prepareCreate(toCreateInput(entry));
+  const prepared = await deps.client.tasks.prepareCreate(toCreateInput(entry), req(deps));
 
   // (2) BARRIER — reach the disk before a signature exists anywhere.
   const marker = {
@@ -111,7 +118,7 @@ export async function execCreate(
   await deps.pacer.submit();
   let result;
   try {
-    result = await deps.client.tasks.submitCreate(prepared.intentId, signedTransaction);
+    result = await deps.client.tasks.submitCreate(prepared.intentId, signedTransaction, req(deps));
   } catch (error) {
     // Ambiguous means we genuinely do not know whether it landed. Keep the
     // marker and surface it; never retry, that is how duplicates happen.
@@ -155,7 +162,7 @@ export async function execRefund(
   target: Plan['toRefund'][number],
 ): Promise<ExecResult> {
   await deps.pacer.prepare();
-  const prepared = await deps.client.tasks.prepareRefund(target.taskId);
+  const prepared = await deps.client.tasks.prepareRefund(target.taskId, req(deps));
 
   const marker = {
     id: target.id,
@@ -177,6 +184,7 @@ export async function execRefund(
       target.taskId,
       prepared.intentId,
       signedTransaction,
+      req(deps),
     );
   } catch (error) {
     const lastKnownStatus =
