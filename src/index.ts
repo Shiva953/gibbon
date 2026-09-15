@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-import { Command, InvalidArgumentError } from 'commander';
-import { applyCommand } from './commands/apply.js';
-import { importCommand } from './commands/import.js';
-import { planCommand } from './commands/plan.js';
-import { statusCommand } from './commands/status.js';
+import { Command, CommanderError, InvalidArgumentError } from 'commander';
+import { EXIT, normalizeError } from './lib/errors.js';
+import { createRuntime } from './runtime.js';
+import { registerSync } from './sync.js';
 import type { Environment } from './types.js';
 
-const DEFAULT_FILE = 'bounties.yaml';
 const VERSION = '0.1.0';
 
 interface GlobalOptions {
@@ -33,7 +31,8 @@ program
      an environment variable. See src/lib/gibworkClient.ts. */
   .option('-k, --keypair <path>', 'path to a Solana keypair JSON file')
   /* Spelled the same as @gibwork/cli's --environment so muscle memory carries
-     over between the two tools. */
+     over. The short forms are standalone conveniences the official CLI does
+     not define; they would be dropped if these commands were ever upstreamed. */
   .option(
     '-e, --environment <environment>',
     'target environment: stage or production',
@@ -41,57 +40,36 @@ program
     'stage' as Environment,
   );
 
-/** Global options live on the root command, so merge them into each action. */
-function globals(): { keypair?: string; env: Environment } {
+/* Must precede registerSync: commander copies _exitCallback into subcommands
+   when they are created, so overriding afterwards would leave them calling
+   process.exit() directly and reporting the wrong code. */
+program.exitOverride();
+
+registerSync(program, async () => {
   const opts = program.opts<GlobalOptions>();
-  return { ...(opts.keypair ? { keypair: opts.keypair } : {}), env: opts.environment };
-}
-
-program
-  .command('plan')
-  .description('Preview changes: diff bounties.yaml against live Gibwork state (read-only)')
-  .option('-f, --file <path>', 'path to the bounties file', DEFAULT_FILE)
-  .action(async (opts: { file: string }) => {
-    await planCommand({ file: opts.file, ...globals() });
+  return createRuntime({
+    ...(opts.keypair ? { keypair: opts.keypair } : {}),
+    environment: opts.environment,
   });
-
-program
-  .command('apply')
-  .description('Reconcile Gibwork with bounties.yaml: create, update, and refund as needed')
-  .option('-f, --file <path>', 'path to the bounties file', DEFAULT_FILE)
-  .option('-y, --yes', 'skip the interactive confirmation (for CI)', false)
-  .action(async (opts: { file: string; yes: boolean }) => {
-    await applyCommand({ file: opts.file, yes: opts.yes, ...globals() });
-  });
-
-program
-  .command('import')
-  .description("Generate bounties.yaml from this wallet's existing live tasks")
-  .option('-f, --file <path>', 'path to write the bounties file', DEFAULT_FILE)
-  .action(async (opts: { file: string }) => {
-    await importCommand({ file: opts.file, ...globals() });
-  });
-
-program
-  .command('status')
-  .description('Resolve unresolved apply operations against live Gibwork state')
-  .option('-f, --file <path>', 'path to the bounties file', DEFAULT_FILE)
-  .option('--dry-run', 'report without rewriting .gibwork/state.json', false)
-  .action(async (opts: { file: string; dryRun: boolean }) => {
-    await statusCommand({ file: opts.file, dryRun: opts.dryRun, ...globals() });
-  });
+});
 
 /**
- * One place to turn a thrown error into a clean exit. Commander's own errors
- * (--help, --version, bad flags) already handle their own exit codes.
+ * One place to turn a thrown value into the exit code @gibwork/cli would use
+ * for the same failure, so a CI script can treat both tools identically.
  */
 async function main(): Promise<void> {
   try {
     await program.parseAsync(process.argv);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`\ngibwork-sync: ${message}\n`);
-    process.exitCode = 1;
+    if (error instanceof CommanderError) {
+      // --help and --version report success; everything else is a usage error.
+      process.exitCode = error.exitCode === 0 ? EXIT.OK : EXIT.USAGE;
+      return;
+    }
+
+    const { code, message } = normalizeError(error);
+    process.stderr.write(`\ngibwork-sync [${code}]: ${message}\n`);
+    process.exitCode = normalizeError(error).exitCode;
   }
 }
 

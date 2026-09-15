@@ -168,9 +168,21 @@ the same as `@gibwork/cli`, so muscle memory carries across).
 | Code | Meaning |
 |---|---|
 | 0 | applied, or nothing to do |
-| 1 | failed |
-| 2 | blocked entries remain (desired state not reached) |
-| 3 | unresolved operations — run `status` before applying again |
+| 1 | internal / protocol / recovery error |
+| 2 | usage error — bad flag, or invalid `bounties.yaml` |
+| 10 | credential or config error |
+| 20 | Gibwork API error |
+| 21 | network error or timeout |
+| 22 | ambiguous submit — run `status`, do **not** retry |
+| 30 | blocked entries remain (desired state not reached) |
+| 31 | unresolved operations — run `status` before applying again |
+| 130 | cancelled |
+
+Codes 0–29 and 130 are reproduced from `@gibwork/cli` so a CI script can treat
+both tools identically. The 30s are gibwork-sync's own, and they are **not**
+errors — the run succeeded, but live state is not what the file asked for. The
+official CLI sets the same precedent with `gibwork mcp doctor`, which exits 30
+for a non-error "not ready" verdict.
 
 ### Typical loop
 

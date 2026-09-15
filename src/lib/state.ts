@@ -9,6 +9,7 @@ import type {
   TrackedTask,
 } from '../types.js';
 import { DEFAULT_MINT } from '../types.js';
+import { CliError, EXIT } from './errors.js';
 
 export const STATE_DIR = '.gibwork';
 export const STATE_FILE = 'state.json';
@@ -155,16 +156,22 @@ export function assertStateMatches(
   wallet: string,
   environment: Environment,
 ): void {
+  // Same situation @gibwork/cli guards before submission recovery, so it
+  // reports the same code and echoes its wording.
   if (state.wallet && state.wallet !== wallet) {
-    throw new Error(
-      `.gibwork/state.json belongs to wallet ${state.wallet}, but the configured ` +
-        `wallet is ${wallet}. Use the original wallet, or start from a separate directory.`,
+    throw new CliError(
+      'Recovery requires the original wallet, environment, and API location. ' +
+        `.gibwork/state.json belongs to ${state.wallet}, but this run uses ${wallet}.`,
+      'RECOVERY_ERROR',
+      EXIT.INTERNAL,
     );
   }
   if (state.environment && state.environment !== environment) {
-    throw new Error(
-      `.gibwork/state.json was written against ${state.environment}, but this run targets ` +
-        `${environment}. Stage and production state must never be mixed.`,
+    throw new CliError(
+      'Recovery requires the original wallet, environment, and API location. ' +
+        `.gibwork/state.json was written against ${state.environment}, but this run targets ${environment}.`,
+      'RECOVERY_ERROR',
+      EXIT.INTERNAL,
     );
   }
 }

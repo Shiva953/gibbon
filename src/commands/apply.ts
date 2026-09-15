@@ -1,28 +1,28 @@
 import { createInterface } from 'node:readline/promises';
 import { GibworkAmbiguousSubmitError } from '@gibwork/sdk';
 import { computePlan } from '../lib/diff.js';
+import { EXIT, normalizeError } from '../lib/errors.js';
 import { execCreate, execRefund, execUpdate } from '../lib/executor.js';
 import type { ExecutorDeps } from '../lib/executor.js';
-import { createClient } from '../lib/gibworkClient.js';
 import { fetchLiveTasks } from '../lib/live.js';
 import { Pacer } from '../lib/pacer.js';
 import { renderPending, renderPlan } from '../lib/render.js';
 import { assertStateMatches, loadState, saveState, stampState } from '../lib/state.js';
 import { loadBounties } from '../lib/yaml.js';
-import type { Environment, SyncState } from '../types.js';
+import type { Runtime } from '../runtime.js';
+import type { SyncState } from '../types.js';
 import { isNoOp } from '../types.js';
 
 export interface ApplyOptions {
   file: string;
   /** Skip the interactive confirmation. For CI. */
   yes?: boolean;
-  keypair?: string;
-  env: Environment;
 }
 
 async function confirm(question: string): Promise<boolean> {
-  // Refuse rather than hang when there is nobody to answer.
-  if (!process.stdin.isTTY) {
+  // Refuse rather than hang when there is nobody to answer. @gibwork/cli
+  // checks both streams, so match it.
+  if (!process.stdin.isTTY || !process.stderr.isTTY) {
     throw new Error('No TTY available to confirm. Re-run with --yes to apply without prompting.');
   }
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -55,8 +55,10 @@ function reportFailure(error: unknown): void {
     return;
   }
 
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`\napply failed: ${message}\n\nRun \`gibwork-sync status\` before retrying.\n\n`);
+  const { code, message } = normalizeError(error);
+  process.stderr.write(
+    `\napply failed [${code}]: ${message}\n\nRun \`gibwork-sync status\` before retrying.\n\n`,
+  );
 }
 
 /**
@@ -70,29 +72,28 @@ function reportFailure(error: unknown): void {
  *      expensive phase still banks them
  *   5. creates, then refunds, each with the prepare/persist/sign/submit barrier
  *
- * Exit codes: 0 applied · 2 blocked entries remain · 3 unresolved operations
- * · 1 failed.
+ * Exit codes follow @gibwork/cli: 0 applied · 30 blocked entries remain
+ * · 31 unresolved operations · 2/10/20/21/22 for usage, credential, API,
+ * network and ambiguous-submit failures.
  */
-export async function applyCommand(options: ApplyOptions): Promise<void> {
+export async function applyCommand(runtime: Runtime, options: ApplyOptions): Promise<void> {
+  const { client, signer, walletAddress, environment, credentialSource } = runtime;
+
   const initial = loadState();
 
   // (1) The watchdog gate. Before any network call, before any money.
   if (initial.pending.length > 0) {
     process.stdout.write(renderPending(initial.pending));
     process.stderr.write('apply refused: resolve the operations above first.\n');
-    process.exitCode = 3;
+    process.exitCode = EXIT.UNRESOLVED;
     return;
   }
 
   const desired = loadBounties(options.file);
-  const { client, signer, wallet, environment, source } = createClient({
-    ...(options.keypair ? { keypair: options.keypair } : {}),
-    env: options.env,
-  });
-  assertStateMatches(initial, wallet, environment);
+  assertStateMatches(initial, walletAddress, environment);
 
   process.stdout.write(
-    `\nwallet ${wallet}  ·  ${environment}  ·  credentials from ${source.kind}\n`,
+    `\nwallet ${walletAddress}  ·  ${environment}  ·  credentials from ${credentialSource.kind}\n`,
   );
 
   // (2) Recompute. The plan you confirm is the plan that runs.
@@ -101,7 +102,7 @@ export async function applyCommand(options: ApplyOptions): Promise<void> {
   process.stdout.write(renderPlan(plan));
 
   if (isNoOp(plan)) {
-    if (plan.blocked.length > 0) process.exitCode = 2;
+    if (plan.blocked.length > 0) process.exitCode = EXIT.BLOCKED;
     return;
   }
 
@@ -114,7 +115,7 @@ export async function applyCommand(options: ApplyOptions): Promise<void> {
     }
   }
 
-  let state: SyncState = stampState(initial, wallet, environment);
+  let state: SyncState = stampState(initial, walletAddress, environment);
   saveState(state);
 
   const deps: ExecutorDeps = {
@@ -149,7 +150,7 @@ export async function applyCommand(options: ApplyOptions): Promise<void> {
   } catch (error) {
     // The executor already persisted a marker before anything was signed.
     reportFailure(error);
-    process.exitCode = 1;
+    process.exitCode = normalizeError(error).exitCode;
     return;
   }
 
@@ -163,9 +164,9 @@ export async function applyCommand(options: ApplyOptions): Promise<void> {
       `\n${unresolved} operation(s) did not reach a confirmed state. ` +
         'Run `gibwork-sync status` to resolve them.\n',
     );
-    process.exitCode = 3;
+    process.exitCode = EXIT.UNRESOLVED;
   } else if (plan.blocked.length > 0) {
-    process.exitCode = 2;
+    process.exitCode = EXIT.BLOCKED;
   }
 
   process.stdout.write('\n');

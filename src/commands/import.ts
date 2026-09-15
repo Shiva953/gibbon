@@ -1,9 +1,7 @@
-import type { Environment } from '../types.js';
+import type { Runtime } from '../runtime.js';
 
 export interface ImportOptions {
   file: string;
-  keypair?: string;
-  env: Environment;
 }
 
 /**
@@ -12,14 +10,14 @@ export interface ImportOptions {
  * adopt gibwork-sync without hand-transcribing their bounties.
  *
  * The acceptance check: immediately after import, `plan` must report zero
- * changes. If it does not, the round-trip is lossy and the file cannot be
+ * changes. If it does not, the round trip is lossy and the file cannot be
  * trusted as the source of truth yet.
  *
  * TODO: implement.
  */
-export async function importCommand(options: ImportOptions): Promise<void> {
+export async function importCommand(runtime: Runtime, options: ImportOptions): Promise<void> {
   console.log(`[import] not yet implemented`);
   console.log(`         file:        ${options.file}`);
-  console.log(`         environment: ${options.env}`);
+  console.log(`         environment: ${runtime.environment}`);
   console.log(`         would write live tasks into the file and seed state.json`);
 }

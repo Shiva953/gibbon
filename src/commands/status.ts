@@ -1,14 +1,13 @@
-import { createClient } from '../lib/gibworkClient.js';
+import { EXIT } from '../lib/errors.js';
 import { resolveOperation } from '../lib/resolve.js';
 import type { Resolution } from '../lib/resolve.js';
 import { assertStateMatches, loadState, saveState } from '../lib/state.js';
 import { loadBounties } from '../lib/yaml.js';
-import type { BountyEntry, Environment, SyncState } from '../types.js';
+import type { Runtime } from '../runtime.js';
+import type { BountyEntry, SyncState } from '../types.js';
 
 export interface StatusOptions {
   file: string;
-  keypair?: string;
-  env: Environment;
   /** Report without writing the resolved state back. */
   dryRun?: boolean;
 }
@@ -30,7 +29,9 @@ const SYMBOL: Record<Resolution['verdict'], string> = {
  *
  * Exits 3 while anything is still in flight, so CI can gate on it.
  */
-export async function statusCommand(options: StatusOptions): Promise<void> {
+export async function statusCommand(runtime: Runtime, options: StatusOptions): Promise<void> {
+  const { client, walletAddress, environment, credentialSource } = runtime;
+
   const state = loadState();
 
   if (state.pending.length === 0) {
@@ -50,14 +51,10 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
     process.stdout.write(`\n(could not read ${options.file}; resolving without it)\n`);
   }
 
-  const { client, wallet, environment, source } = createClient({
-    ...(options.keypair ? { keypair: options.keypair } : {}),
-    env: options.env,
-  });
-  assertStateMatches(state, wallet, environment);
+  assertStateMatches(state, walletAddress, environment);
 
   process.stdout.write(
-    `\nwallet ${wallet}  ·  ${environment}  ·  credentials from ${source.kind}\n` +
+    `\nwallet ${walletAddress}  ·  ${environment}  ·  credentials from ${credentialSource.kind}\n` +
       `\nResolving ${state.pending.length} unresolved operation(s)...\n\n`,
   );
 
@@ -88,7 +85,7 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
       `\n${stillPending} operation(s) still settling. ` +
         'apply stays blocked until they clear — re-run status shortly.\n\n',
     );
-    process.exitCode = 3;
+    process.exitCode = EXIT.UNRESOLVED;
     return;
   }
 

@@ -4,6 +4,7 @@ import { createKeypairSigner } from '@gibwork/sdk/node';
 import { GibworkClient } from '@gibwork/sdk';
 import type { WalletSigner } from '@gibwork/sdk';
 import type { Environment } from '../types.js';
+import { CliError, EXIT } from './errors.js';
 
 /**
  * Credential resolution, matching the safety rules @gibwork/cli follows:
@@ -34,8 +35,11 @@ export type CredentialSource =
   | { kind: 'env-private-key' }
   | { kind: 'env-keypair-path'; path: string };
 
-export class CredentialError extends Error {
-  override name = 'CredentialError';
+export class CredentialError extends CliError {
+  override readonly name = 'CredentialError';
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'CREDENTIAL_ERROR', EXIT.CREDENTIAL, details);
+  }
 }
 
 const SETUP_HINT = [
@@ -132,9 +136,9 @@ export function resolveEnvironment(env?: Environment): Environment {
 export function createClient(options: CredentialOptions = {}): {
   client: GibworkClient;
   signer: WalletSigner;
-  wallet: string;
+  walletAddress: string;
   environment: Environment;
-  source: CredentialSource;
+  credentialSource: CredentialSource;
 } {
   const { privateKey, source } = resolveCredentials(options);
   const environment = resolveEnvironment(options.env);
@@ -146,5 +150,11 @@ export function createClient(options: CredentialOptions = {}): {
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
   });
 
-  return { client, signer, wallet: signer.publicKey.toBase58(), environment, source };
+  return {
+    client,
+    signer,
+    walletAddress: signer.publicKey.toBase58(),
+    environment,
+    credentialSource: source,
+  };
 }

@@ -2,9 +2,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { dump, load } from 'js-yaml';
 import type { BountyEntry } from '../types.js';
+import { CliError, EXIT } from './errors.js';
 
-export class BountyFileError extends Error {
-  override name = 'BountyFileError';
+export class BountyFileError extends CliError {
+  override readonly name = 'BountyFileError';
+  constructor(message: string) {
+    super(message, 'USAGE_ERROR', EXIT.USAGE);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
