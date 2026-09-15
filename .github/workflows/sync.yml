@@ -1,0 +1,87 @@
+name: gibwork-sync
+
+on:
+  pull_request:
+    paths: ['bounties.yaml', 'src/**', 'test/**', 'package.json']
+  push:
+    branches: [main]
+    paths: ['bounties.yaml']
+  workflow_dispatch:
+
+concurrency:
+  # Never let two applies run against the same wallet at once. A second
+  # concurrent apply is exactly how you get duplicate bounties.
+  group: gibwork-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Typecheck and offline tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run build
+
+  plan:
+    name: Plan (read-only)
+    needs: check
+    # Fork PRs get no secrets, so a plan there would only fail confusingly.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: gibwork-sync plan
+        env:
+          GIBWORK_PRIVATE_KEY: ${{ secrets.GIBWORK_PRIVATE_KEY }}
+        run: node dist/index.js plan --env stage
+
+  apply:
+    name: Apply
+    needs: check
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # `apply` signs real transactions and moves real funds. Configure this
+    # environment in repo settings with a required reviewer so a merge to main
+    # cannot spend from the wallet without a human approving the run.
+    environment: gibwork
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      # Refuse to apply on top of an operation a previous run left unresolved.
+      - name: Check for unresolved operations
+        env:
+          GIBWORK_PRIVATE_KEY: ${{ secrets.GIBWORK_PRIVATE_KEY }}
+        run: node dist/index.js status --env ${{ vars.GIBWORK_ENV || 'stage' }}
+
+      - name: gibwork-sync apply
+        env:
+          GIBWORK_PRIVATE_KEY: ${{ secrets.GIBWORK_PRIVATE_KEY }}
+        run: node dist/index.js apply --yes --env ${{ vars.GIBWORK_ENV || 'stage' }}
+
+      # state.json is the only record of what an interrupted run was doing.
+      # Keep it even when the job fails — especially when the job fails.
+      - name: Upload sync state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gibwork-state
+          path: .gibwork/state.json
+          if-no-files-found: ignore

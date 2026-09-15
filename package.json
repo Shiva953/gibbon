@@ -1,16 +1,45 @@
 {
-  "name": "gibwork-hackathon-bot",
-  "module": "index.ts",
+  "name": "gibwork-sync",
+  "version": "0.1.0",
+  "description": "Declarative, version-controlled bounty management for Gibwork. Describe your bounties in bounties.yaml, then plan and apply them like Terraform.",
   "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
   },
-  "peerDependencies": {
-    "typescript": "^5"
+  "bin": {
+    "gibwork-sync": "./dist/index.js"
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./test/*.test.ts",
+    "test:live": "bun test test/live",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "gibwork",
+    "bounties",
+    "solana",
+    "cli",
+    "infrastructure-as-code"
+  ],
   "dependencies": {
-    "@gibwork/cli": "^0.2.4",
-    "@gibwork/sdk": "^0.2.0"
+    "@gibwork/sdk": "^0.2.0",
+    "commander": "^12.1.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.0",
+    "typescript": "~5.9.3"
   }
 }

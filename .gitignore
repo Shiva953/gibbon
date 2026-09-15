@@ -1,41 +1,32 @@
-# dependencies (bun install)
+# dependencies
 node_modules
 
-# output
-out
+# build output
 dist
+out
 *.tgz
+*.tsbuildinfo
 
-# code coverage
+# gibwork-sync local state: per-wallet, per-environment, and regenerable
+# with `gibwork-sync import`. Never commit it.
+.gibwork/
+
+# secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# test/coverage
 coverage
 *.lcov
 
 # logs
 logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+*.log
 
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
-
-# caches
-.eslintcache
-.cache
-*.tsbuildinfo
-
-# IntelliJ based IDEs
+# editors / OS
 .idea
-
-# Finder (MacOS) folder config
-.DS_Store
-
-#bun
-*bun.lockb
-*bun.lock
-
-# Cursor IDE
 .cursor/
+.DS_Store

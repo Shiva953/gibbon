@@ -1,0 +1,23 @@
+# Sample bounty file used by the offline test suite.
+- id: fix-142
+  issue: "#142"
+  title: "Fix memory leak in parser"
+  content: "<p>Long-running processes accumulate memory. See #142.</p>"
+  tags: [bug, rust]
+  amount: "40.00"
+  minSubmission: "5.00"
+
+- id: docs-cli
+  issue: "#151"
+  title: "Document the CLI flags"
+  content: "<p>Every flag needs a line in the README.</p>"
+  tags: [docs]
+  amount: "15.00"
+  minSubmission: "5.00"
+  allowOnlyVerifiedSubmissions: true
+
+- id: bench-suite
+  title: "Add a benchmark suite"
+  content: "<p>We keep regressing on throughput with nothing to catch it.</p>"
+  tags: [perf, rust]
+  amount: "120.00"

@@ -1,18 +1,104 @@
-export interface StatusOptions {
-    file: string;
-  }
-  
-  /**
-   * Checks .gibwork/state.json for any entries whose last apply
-   * attempt did not reach a confirmed final state (i.e. the
-   * lightweight reconciliation-watchdog behavior folded into sync,
-   * per the earlier design decision). Refuses to let `apply` run
-   * again over an unresolved entry until this is clean.
-   *
-   * TODO: implement — will call submissions/tasks status reads.
-   */
-  export async function statusCommand(options: StatusOptions): Promise<void> {
-    //implement status logic
-    console.log(`[status] would check ${options.file} for unresolved operations`);
+import { createClient } from '../lib/gibworkClient.js';
+import { resolveOperation } from '../lib/resolve.js';
+import type { Resolution } from '../lib/resolve.js';
+import { assertStateMatches, loadState, saveState } from '../lib/state.js';
+import { loadBounties } from '../lib/yaml.js';
+import type { BountyEntry, Environment, SyncState } from '../types.js';
 
+export interface StatusOptions {
+  file: string;
+  keypair?: string;
+  env: Environment;
+  /** Report without writing the resolved state back. */
+  dryRun?: boolean;
+}
+
+const SYMBOL: Record<Resolution['verdict'], string> = {
+  'never-landed': 'x',
+  'in-flight': '~',
+  succeeded: 'v',
+  'rolled-back': 'x',
+};
+
+/**
+ * The reconciliation watchdog.
+ *
+ * Reads back every operation a previous `apply` started but never confirmed,
+ * and settles the local record against what Gibwork actually shows. It only
+ * ever READS from the API — no transaction is signed and no funds move — but it
+ * does rewrite .gibwork/state.json, which is what unblocks `apply`.
+ *
+ * Exits 3 while anything is still in flight, so CI can gate on it.
+ */
+export async function statusCommand(options: StatusOptions): Promise<void> {
+  const state = loadState();
+
+  if (state.pending.length === 0) {
+    const tracked = Object.keys(state.tasks).length;
+    process.stdout.write(
+      `\nNo unresolved operations. ${tracked} bounty(s) tracked in .gibwork/state.json.\n\n`,
+    );
+    return;
   }
+
+  // The file is only needed to hash an adopted task. A missing or edited file
+  // must never stop recovery — that would be the worst possible time to fail.
+  let entriesById = new Map<string, BountyEntry>();
+  try {
+    entriesById = new Map(loadBounties(options.file).map((entry) => [entry.id, entry]));
+  } catch {
+    process.stdout.write(`\n(could not read ${options.file}; resolving without it)\n`);
+  }
+
+  const { client, wallet, environment, source } = createClient({
+    ...(options.keypair ? { keypair: options.keypair } : {}),
+    env: options.env,
+  });
+  assertStateMatches(state, wallet, environment);
+
+  process.stdout.write(
+    `\nwallet ${wallet}  ·  ${environment}  ·  credentials from ${source.kind}\n` +
+      `\nResolving ${state.pending.length} unresolved operation(s)...\n\n`,
+  );
+
+  let next: SyncState = state;
+  const resolutions: Resolution[] = [];
+
+  // Iterate a snapshot: `next` is rewritten as each operation settles.
+  for (const op of [...state.pending]) {
+    const result = await resolveOperation(client, next, op, entriesById.get(op.id));
+    next = result.state;
+    resolutions.push(result.resolution);
+
+    const { verdict, detail } = result.resolution;
+    process.stdout.write(`  ${SYMBOL[verdict]} ${op.kind.padEnd(7)} ${op.id.padEnd(16)} ${detail}\n`);
+    process.stdout.write(`            task ${op.taskId ?? 'unknown'}\n`);
+  }
+
+  if (options.dryRun) {
+    process.stdout.write('\n--dry-run: .gibwork/state.json was not modified.\n\n');
+    return;
+  }
+
+  saveState(next);
+
+  const stillPending = next.pending.length;
+  if (stillPending > 0) {
+    process.stdout.write(
+      `\n${stillPending} operation(s) still settling. ` +
+        'apply stays blocked until they clear — re-run status shortly.\n\n',
+    );
+    process.exitCode = 3;
+    return;
+  }
+
+  const adopted = resolutions.filter((r) => r.verdict === 'succeeded').length;
+  const retryable = resolutions.filter(
+    (r) => r.verdict === 'never-landed' || r.verdict === 'rolled-back',
+  ).length;
+
+  process.stdout.write(
+    `\nAll clear. ${adopted} confirmed, ${retryable} safe to apply again.\n` +
+      'Run `gibwork-sync plan` to see what is left to do.\n\n',
+  );
+}
