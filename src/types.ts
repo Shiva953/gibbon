@@ -11,6 +11,16 @@
 /** Mainnet USDC. Used when an entry does not name its own mint. */
 export const DEFAULT_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
+/**
+ * The reward range Gibwork accepts, verified against the stage API:
+ * "payment.amount must be between 1.00 and 100000.00 inclusive" (HTTP 400).
+ *
+ * Checked at parse time so an out-of-range amount fails as a usage error
+ * before any network call, rather than as an API error one round trip later.
+ */
+export const MIN_BOUNTY_AMOUNT = 1;
+export const MAX_BOUNTY_AMOUNT = 100_000;
+
 /** Fields the Gibwork API allows changing on an already-live task. */
 export const UPDATABLE_FIELDS = [
   'content',

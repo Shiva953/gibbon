@@ -48,5 +48,9 @@ export async function planCommand(runtime: Runtime, options: PlanOptions): Promi
     if (state.pending.length > 0) process.stdout.write(renderPending(state.pending));
   }
 
+  // Blocked entries mean the desired state cannot be reached, so CI can gate
+  // on plan alone. Unresolved operations outrank them: they block apply
+  // entirely, so that is the more urgent thing to report.
+  if (plan.blocked.length > 0) process.exitCode = EXIT.BLOCKED;
   if (state.pending.length > 0) process.exitCode = EXIT.UNRESOLVED;
 }

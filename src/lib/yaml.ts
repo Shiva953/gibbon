@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { dump, load } from 'js-yaml';
 import type { BountyEntry } from '../types.js';
+import { MAX_BOUNTY_AMOUNT, MIN_BOUNTY_AMOUNT } from '../types.js';
 import { CliError, EXIT } from './errors.js';
 
 export class BountyFileError extends CliError {
@@ -55,6 +56,8 @@ function parseEntry(raw: unknown, index: number): BountyEntry {
     throw new BountyFileError(`Entry #${index + 1}: \`tags\` must be a list of strings.`);
   }
 
+  // Field order matches the file, so the first problem reported is the first
+  // one a reader would look for.
   const entry: BountyEntry = {
     id: requireString(raw['id'], 'id', index),
     title: requireString(raw['title'], 'title', index),
@@ -62,6 +65,15 @@ function parseEntry(raw: unknown, index: number): BountyEntry {
     tags: tagsRaw as string[],
     amount: requireDecimalString(raw['amount'], 'amount', index),
   };
+
+  const numericAmount = Number(entry.amount);
+  if (numericAmount < MIN_BOUNTY_AMOUNT || numericAmount > MAX_BOUNTY_AMOUNT) {
+    throw new BountyFileError(
+      `Entry #${index + 1}: \`amount\` must be between ${MIN_BOUNTY_AMOUNT.toFixed(2)} and ` +
+        `${MAX_BOUNTY_AMOUNT.toFixed(2)}, got "${entry.amount}". ` +
+        'Gibwork rejects rewards outside that range.',
+    );
+  }
 
   if (raw['issue'] !== undefined) entry.issue = String(raw['issue']);
   if (raw['mint'] !== undefined) entry.mint = requireString(raw['mint'], 'mint', index);

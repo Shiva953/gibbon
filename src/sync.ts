@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { agentCommand } from './commands/agent.js';
 import { applyCommand } from './commands/apply.js';
 import { importCommand } from './commands/import.js';
 import { planCommand } from './commands/plan.js';
@@ -43,6 +44,26 @@ export function registerSync(parent: Command, getRuntime: RuntimeFactory): Comma
     .option('-f, --file <path>', 'path to write the bounties file', DEFAULT_FILE)
     .action(async (opts: { file: string }) => {
       await importCommand(await getRuntime(), { file: opts.file });
+    });
+
+  /* The one verb that needs no wallet: it reads local files, calls Claude, and
+     writes a file. Registered without getRuntime so it never resolves Solana
+     credentials — an agent editing the file should not be able to reach the
+     platform at all. */
+  parent
+    .command('agent')
+    .description('Rewrite bounties.yaml from a natural-language request (never applies it)')
+    .argument('<prompt>', 'what to change, in quotes')
+    .option('-f, --file <path>', 'path to the bounties file', DEFAULT_FILE)
+    .option('--dry-run', 'show the edit without writing the file', false)
+    .option('--model <id>', 'Claude model to use')
+    .action(async (prompt: string, opts: { file: string; dryRun: boolean; model?: string }) => {
+      await agentCommand({
+        file: opts.file,
+        prompt,
+        dryRun: opts.dryRun,
+        ...(opts.model ? { model: opts.model } : {}),
+      });
     });
 
   parent

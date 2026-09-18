@@ -10,47 +10,117 @@ infrastructure.
 Built on the **[@gibwork/sdk](https://www.npmjs.com/package/@gibwork/sdk)**.
 It is a terminal tool: no web app, no dashboard, no browser.
 
-> **Status: `plan`, `apply` and `status` are implemented** and covered by 62
-> offline tests. `import` is the remaining stub. See [Roadmap](#roadmap).
+> **Status: `plan`, `apply`, `status` and `agent` are implemented** and covered
+> by 75 offline tests. `import` is the remaining stub. See
+> [Roadmap](#roadmap).
 
 ---
 
 ## The problem
 
-Gibwork creators manage bounties one at a time, through the web app or
-`@gibwork/cli`:
+Every existing way to manage Gibwork bounties is **imperative** — you issue
+actions, one at a time, through the app or `@gibwork/cli`. That is fine for a
+single bounty. For a *set* that exists over time, four things go wrong, and an
+agent driving the CLI only fixes the first:
 
-- **Creating N bounties takes N commands.** There is no way to declare "here
-  are the ten bounties I want funded" and have it happen in one reviewed step.
-- **Editing a live bounty means first finding its UUID.** Run
-  `gibwork task list --all`, scan the output, copy the ID, then
-  `gibwork task update <uuid> …`. Nothing locally remembers that "the fix-142
-  bounty" is `3f9c…`, so you rediscover it every single time.
-- **There is no audit trail.** Nothing records who raised a reward, when, or
-  why — only the state that happens to exist right now.
-- **Interrupted operations stay unresolved.** `tasks.create` and friends run a
-  prepare → sign → submit sequence that a dropped connection or a killed
-  process can interrupt, leaving an intent `pending`, `submitted`, or
-  `requires_review`. The SDK ships idempotency keys and recovery files
-  precisely because this happens — but nothing re-checks them for you.
+- **Friction** *(an agent closes this)*. Ten bounties is ten commands, and
+  editing one means running `gibwork task list`, scanning for it, and copying
+  its UUID. A coding agent will do all of that for you, so this is the weakest
+  of the four.
+- **Re-running duplicates instead of converging.** Ask an agent twice for
+  "two bounties named xanlo and preyce" and you get four bounties and a 4 USDC
+  bill. Actions accumulate; state does not.
+- **No record of what you intended.** Only the state that happens to exist
+  right now. Nothing says who raised a reward from 1 to 5, when, or why — and
+  nothing can tell you a bounty was edited in the app and no longer matches
+  what you meant.
+- **Interrupted creates are unrecoverable by default.** `tasks.create` runs a
+  prepare → sign → submit sequence a dropped connection can interrupt. Unlike
+  submissions, **`CreateTaskInput` carries no idempotency key** — so retrying
+  does not resume, it funds a *second* bounty, and the platform will not stop
+  you.
 
-`gibwork-sync` puts the bounty set in a file, in git, and reconciles it.
+`gibwork-sync` puts the bounty set in a file, in git, and reconciles it — so
+re-running converges, intent is versioned, and an interrupted create is
+recoverable.
 
-### Honest note on time saved
+---
 
-For a **single one-off bounty this tool saves you nothing** — use
-`@gibwork/cli` directly. The value shows up in two places:
+## Why not the app, or the CLI, or the CLI with an agent?
 
-1. **Batch creation.** The platform's rate limits mean wall-clock time is
-   roughly the same, but *human attention* drops from babysitting N
-   confirmations to one review and one confirmation.
-2. **Ongoing edits.** The tool already knows the `id → taskId` mapping, so
-   there is no UUID lookup. Over repeated use this is the single biggest
-   practical win.
+Gibwork already ships three ways to manage bounties, and **two of them are
+better than this tool for most single operations.** Being precise about where
+the line falls matters more than overselling:
 
-**Who this is for:** maintainers running more than a handful of bounties, or
-an ongoing bounty program. **Who it is not for:** someone posting one ad-hoc
-bounty, and bounty hunters — Gibwork's own apps cover that side.
+| | Gibwork app | `@gibwork/cli` | CLI + agent skill | **gibwork-sync** |
+|---|---|---|---|---|
+| One ad-hoc bounty | **best** | good | good | worse |
+| Rich content, images, media | **yes** | partial | partial | **no** |
+| Finding a bounty's UUID | n/a | manual | agent does it | never needed |
+| A batch of ten changes | ten UI flows | ~13 commands | one prompt | one `apply` |
+| Preview every change first | no | no | model describes it | **`plan`, deterministic** |
+| Re-run the same request twice | n/a | duplicates | **duplicates** | **converges** |
+| Versioned record of intent | no | no | no | **yes (`git`)** |
+| Detect drift from intent | no | no | no | **yes** |
+| Runs with no LLM at all | yes | yes | **no** | **yes** |
+| Recover an interrupted create | no | no | no | **yes** |
+| Who decides what executes | you | you | **the model** | **a pure function** |
+
+### What an agent closes, and what it doesn't
+
+An agent driving `@gibwork/cli` genuinely removes most of the friction: it
+finds UUIDs, loops over N operations, and writes the long flags for you. Any
+claim that gibwork-sync wins on *convenience* is stale the moment you have a
+coding agent open.
+
+Five differences are not convenience, and no amount of agent cleverness closes
+them:
+
+1. **Idempotence.** `"create 2 bounties named xanlo and preyce"` run twice
+   through an agent produces **four** bounties and spends 4 USDC. The same file
+   applied twice produces two, then reports `No changes.` A file describes a
+   *state*; a prompt describes an *action*.
+2. **The model never touches money.** With the skill, the LLM *is* the
+   executor — it picks which UUID to refund and calls the API. Here the LLM
+   writes a text file, deterministic code computes the diff, a human approves,
+   and deterministic code executes. A hallucinated UUID produces a file that
+   fails to parse instead of a refunded bounty.
+3. **A record of intent.** After an agent run you have bounties and a chat
+   transcript. `git log bounties.yaml` tells you who raised a reward, when, and
+   why — and makes bounty changes reviewable in a pull request.
+4. **Drift detection.** Because intent is recorded, `plan` can tell you *"this
+   bounty was edited in the app and no longer matches what you meant."* Without
+   a recorded intent there is nothing to compare against.
+5. **No LLM in the loop.** `plan` and `apply` need no API key, no tokens, no
+   model. That is what makes CI, cron, and unattended runs possible — you do
+   not want a model deciding what to refund at 3am.
+
+### The core problem
+
+**A bounty program is state, but every existing tool treats it as a series of
+actions.**
+
+Imperative tools work fine until you have a *set* that exists over time. Then
+you need answers no action-based tool can give:
+
+- What *should* exist, versus what *does*?
+- What changed since I last looked, and who changed it?
+- If I run this again, does it converge or duplicate?
+- If it died halfway through, what actually happened?
+
+gibwork-sync answers those by making the bounty set a file, diffing it against
+live state with a pure function, and never letting anything but that diff move
+money.
+
+### Who it is for
+
+**Maintainers running an ongoing bounty program** — a set that changes over
+time, ideally reviewed by more than one person, and which must survive being
+re-run.
+
+**Not for:** a single ad-hoc bounty (use the app), bounties needing rich
+formatting or images (use the app — this tool cannot upload media), or bounty
+hunters (Gibwork's own apps cover that side).
 
 ---
 
@@ -181,6 +251,7 @@ gibwork-sync plan    [-f, --file <path>]              # read-only diff
 gibwork-sync apply   [-f, --file <path>] [-y]         # execute the diff
 gibwork-sync import  [-f, --file <path>]              # bootstrap from live state
 gibwork-sync status  [-f, --file <path>] [--dry-run]  # resolve interrupted runs
+gibwork-sync agent   "<prompt>" [--dry-run]           # rewrite the file from a request
 ```
 
 Global flags, spelled exactly as `@gibwork/cli` spells them:
@@ -334,9 +405,9 @@ nothing, so retrying it is free.
 - [x] `apply` with the crash barrier and rate-limit pacing (prepare 2/min,
       submit 5/min)
 - [x] `status` — resolves pending markers via `tasks.get(taskId)`
+- [x] Verified live on stage: `asset.amount` is base units, HTML round-trips
+      byte-identically, and Gibwork auto-assigns a deadline
 - [ ] `import` round-trip
-- [ ] Verify HTML round-tripping on stage, then loosen `contentEquals`
-- [ ] Confirm whether `TaskDetails.asset.amount` is whole tokens or base units
 - [ ] Live stage test for the interrupted-apply case
 
 ## License

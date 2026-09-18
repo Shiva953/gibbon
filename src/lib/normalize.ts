@@ -3,15 +3,10 @@ import type { BountyEntry, LiveTask, ResolvedEntry } from '../types.js';
 import { DEFAULT_MINT } from '../types.js';
 
 /**
- * Renders a numeric amount as a canonical decimal string.
+ * Renders a whole-token amount as a canonical decimal string.
  *
- * ASSUMPTION, and the one place it lives: `TaskDetails.asset.amount` is in
- * whole tokens (40 means 40 USDC), matching the format `CreateTaskInput`
- * accepts. If it turns out to be base units, only this function changes.
- *
- * The failure mode is benign by construction: `amount` is immutable on a live
- * task, so a wrong reading here can only ever produce a spurious `blocked`
- * warning — noisy, but it can never trigger a refund or a duplicate create.
+ * Used for `minSubmissionAmount`, which the API reports in WHOLE TOKENS as a
+ * number (1 means 1.00 USDC). Not for `asset.amount` — see formatBaseUnits.
  */
 export function formatAmount(value: number | string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -24,6 +19,35 @@ export function formatAmount(value: number | string | null | undefined): string 
 /** Normalizes a decimal string from YAML into the same canonical form. */
 export function normalizeAmount(value: string): string {
   return formatAmount(value) ?? value;
+}
+
+/**
+ * Converts a base-unit amount into a canonical whole-token decimal string.
+ *
+ * Verified against the live API, which is inconsistent between two fields of
+ * the same object:
+ *
+ *   asset.amount        "1000000"  base units, as a string   (decimals: 6)
+ *   minSubmissionAmount 1          whole tokens, as a number
+ *
+ * The SDK's typedef declares `asset.amount: number`; the wire format is a
+ * string, so both are accepted here.
+ *
+ * Returns null when `decimals` is absent rather than guessing a scale —
+ * an unknown value is treated as "not reported" and skipped by the diff,
+ * which is preferable to manufacturing drift a maintainer cannot act on.
+ */
+export function formatBaseUnits(
+  value: string | number | null | undefined,
+  decimals: number | null | undefined,
+): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof decimals !== 'number' || !Number.isInteger(decimals) || decimals < 0) return null;
+
+  const raw = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(raw)) return null;
+
+  return formatAmount(raw / 10 ** decimals);
 }
 
 /**
@@ -48,7 +72,7 @@ export function toLiveTask(details: TaskDetails, summary?: WalletTaskSummary): L
     title: details.title,
     content: details.content,
     tags: details.tags ?? [],
-    amount: formatAmount(details.asset?.amount) ?? '0',
+    amount: formatBaseUnits(details.asset?.amount, details.asset?.decimals) ?? '0',
     mint: details.asset?.mintAddress ?? null,
     minSubmission: formatAmount(details.minSubmissionAmount),
     deadline: details.deadline ?? null,

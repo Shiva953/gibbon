@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { computePlan } from '../src/lib/diff.js';
+import { formatBaseUnits, toLiveTask } from '../src/lib/normalize.js';
 import { BountyFileError, parseBounties } from '../src/lib/yaml.js';
 import type { BountyEntry, LiveTask, SyncState } from '../src/types.js';
 import { DEFAULT_MINT } from '../src/types.js';
@@ -76,6 +77,37 @@ describe('computePlan', () => {
     expect(plan.toUpdate).toHaveLength(1);
     expect(plan.toUpdate[0]?.changes).toEqual(['content']);
     expect(plan.toUpdate[0]?.taskId).toBe('uuid-1');
+  });
+
+  test('a server-assigned deadline is not drift when the file omits it', () => {
+    // Verified live on 2026-09-18: creating with no deadline returns one
+    // anyway (createdAt + 45m). Diffing it produced an update that could
+    // never converge, because apply sends no deadline for an undefined field.
+    const plan = computePlan({
+      desired: [entry({ deadline: undefined })],
+      live: [live({ deadline: '2026-09-18T11:27:22.001Z' })],
+      state: tracking(),
+    });
+    expect(plan.toUpdate).toHaveLength(0);
+    expect(plan.unchanged).toHaveLength(1);
+  });
+
+  test('an omitted verified-only flag is unmanaged', () => {
+    const plan = computePlan({
+      desired: [entry({ allowOnlyVerifiedSubmissions: undefined })],
+      live: [live({ allowOnlyVerifiedSubmissions: true })],
+      state: tracking(),
+    });
+    expect(plan.toUpdate).toHaveLength(0);
+  });
+
+  test('but a deadline the file DOES state is still enforced', () => {
+    const plan = computePlan({
+      desired: [entry({ deadline: '2026-10-01T12:00:00.000Z' })],
+      live: [live({ deadline: '2026-09-18T11:27:22.001Z' })],
+      state: tracking(),
+    });
+    expect(plan.toUpdate[0]?.changes).toEqual(['deadline']);
   });
 
   test('updates when deadline or verified-only drift', () => {
@@ -232,6 +264,46 @@ describe('normalization', () => {
     expect(plan.toUpdate).toHaveLength(1);
   });
 
+  test('asset.amount is base units; minSubmissionAmount is whole tokens', () => {
+    // Verified against the live API on 2026-09-18 for a 1.00 USDC bounty:
+    //   asset: { amount: "1000000", decimals: 6 }   <- base units, string
+    //   minSubmissionAmount: 1                      <- whole tokens, number
+    const live = toLiveTask({
+      id: 'uuid-1',
+      title: 'gibwork-sync probe A',
+      content: '<p>x</p>',
+      tags: ['test'],
+      status: 'CREATED',
+      isOpen: true,
+      deadline: null,
+      allowOnlyVerifiedSubmissions: false,
+      minSubmissionAmount: 1,
+      asset: { mintAddress: DEFAULT_MINT, amount: '1000000', decimals: 6 },
+    } as never);
+
+    expect(live.amount).toBe('1');
+    expect(live.minSubmission).toBe('1');
+  });
+
+  test('formatBaseUnits scales by decimals, and refuses to guess', () => {
+    expect(formatBaseUnits('1000000', 6)).toBe('1');
+    expect(formatBaseUnits('40500000', 6)).toBe('40.5');
+    expect(formatBaseUnits(1000000, 6)).toBe('1');
+    expect(formatBaseUnits('1000000', undefined)).toBeNull();   // unknown scale -> not reported
+    expect(formatBaseUnits(null, 6)).toBeNull();
+  });
+
+  test('a 1.00 entry does not drift against its own live task', () => {
+    // The exact regression that blocked probe-a: "1.00" vs base-unit "1000000".
+    const plan = computePlan({
+      desired: [entry({ amount: '1.00', minSubmission: '1.00' })],
+      live: [live({ amount: '1', minSubmission: '1' })],
+      state: tracking(),
+    });
+    expect(plan.blocked).toHaveLength(0);
+    expect(plan.unchanged).toHaveLength(1);
+  });
+
   test('"40.00" and 40 are the same amount', () => {
     const plan = computePlan({
       desired: [entry({ amount: '40.00' })],
@@ -297,6 +369,25 @@ describe('bounties.yaml parsing', () => {
     // amount depends on, so this has to be a hard error.
     const raw = '- id: a\n  title: A\n  content: A\n  tags: []\n  amount: 40.00\n';
     expect(() => parseBounties(raw)).toThrow(/must be a quoted string/);
+  });
+
+  test('rejects an amount below the platform minimum', () => {
+    // Verified against the stage API: "payment.amount must be between
+    // 1.00 and 100000.00 inclusive". Caught at parse time, before any request.
+    const raw = '- id: a\n  title: A\n  content: A\n  tags: []\n  amount: "0.50"\n';
+    expect(() => parseBounties(raw)).toThrow(/must be between 1.00 and 100000.00/);
+  });
+
+  test('rejects an amount above the platform maximum', () => {
+    const raw = '- id: a\n  title: A\n  content: A\n  tags: []\n  amount: "100001.00"\n';
+    expect(() => parseBounties(raw)).toThrow(/must be between 1.00 and 100000.00/);
+  });
+
+  test('accepts the boundaries themselves', () => {
+    for (const amount of ['1.00', '100000.00']) {
+      const raw = `- id: a\n  title: A\n  content: A\n  tags: []\n  amount: "${amount}"\n`;
+      expect(parseBounties(raw)[0]?.amount).toBe(amount);
+    }
   });
 
   test('rejects a top-level mapping instead of a list', () => {

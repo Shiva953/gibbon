@@ -13,6 +13,7 @@ import {
   saveState,
   stateFilePath,
 } from '../src/lib/state.js';
+import { diffLines } from '../src/lib/render.js';
 import type { BountyEntry } from '../src/types.js';
 
 function scratch(): string {
@@ -134,5 +135,26 @@ describe('forgetTask', () => {
   test('drops a task after a confirmed refund', () => {
     const state = forgetTask(recordTask(emptyState(), 'fix-142', 'uuid-1', entry), 'fix-142');
     expect(state.tasks['fix-142']).toBeUndefined();
+  });
+});
+
+describe('diffLines', () => {
+  test('marks only the changed line', () => {
+    const before = 'a\nb\nc';
+    const after = 'a\nB\nc';
+    expect(diffLines(before, after)).toEqual(['  a', '- b', '+ B', '  c']);
+  });
+
+  test('reports an insertion without rewriting the rest', () => {
+    expect(diffLines('a\nc', 'a\nb\nc')).toEqual(['  a', '+ b', '  c']);
+  });
+
+  test('reports a deletion', () => {
+    expect(diffLines('a\nb\nc', 'a\nc')).toEqual(['  a', '- b', '  c']);
+  });
+
+  test('identical input produces no +/- lines', () => {
+    const diff = diffLines('a\nb', 'a\nb');
+    expect(diff.some((l) => l.startsWith('+') || l.startsWith('-'))).toBe(false);
   });
 });

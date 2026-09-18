@@ -49,14 +49,34 @@ function immutableDrift(entry: BountyEntry, live: LiveTask): ImmutableField[] {
   return drift;
 }
 
-/** Updatable fields that differ. These are the ones tasks.update can fix. */
+/**
+ * Updatable fields that differ. These are the ones tasks.update can fix.
+ *
+ * An omitted optional field is UNMANAGED, not "must be empty". The rule is:
+ * if we do not send a field on create, we do not diff it.
+ *
+ * This matters because Gibwork assigns its own defaults. A bounty created with
+ * no deadline comes back with a server-generated one; treating that as drift
+ * produced an update that could never converge — `toUpdateInput` skips an
+ * undefined deadline, so apply would send an empty patch, nothing would
+ * change, and the next plan would report the same drift forever.
+ */
 function updatableDrift(entry: BountyEntry, live: LiveTask): UpdatableField[] {
   const drift: UpdatableField[] = [];
+
   if (!contentEquals(entry.content, live.content)) drift.push('content');
-  if (!sameOptional(entry.deadline, live.deadline)) drift.push('deadline');
-  if ((entry.allowOnlyVerifiedSubmissions ?? false) !== live.allowOnlyVerifiedSubmissions) {
+
+  if (entry.deadline !== undefined && !sameOptional(entry.deadline, live.deadline)) {
+    drift.push('deadline');
+  }
+
+  if (
+    entry.allowOnlyVerifiedSubmissions !== undefined &&
+    entry.allowOnlyVerifiedSubmissions !== live.allowOnlyVerifiedSubmissions
+  ) {
     drift.push('allowOnlyVerifiedSubmissions');
   }
+
   return drift;
 }
 
