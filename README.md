@@ -224,31 +224,143 @@ Keep that file. It is the only thing connecting `fix-142` to that UUID. If you
 delete it, the tool forgets the bounty exists and your money stays locked in
 escrow.
 
+### Why not just use the official CLI here?
+
+For one bounty, you should. The equivalent is six lines, the same as the YAML:
+
+```bash
+gibwork task create --profile stage \
+  --title "Fix memory leak in parser" \
+  --content "<p>Long-running processes accumulate memory. See issue #142.</p>" \
+  --tag bug --tag rust \
+  --amount 1.00 --min-submission 1.00
+```
+
+It is not shorter and it does not need a file. The difference starts at the
+second bounty, and at the second time you run anything.
+
 ---
 
-## Three things worth seeing
+## What a normal Friday looks like
 
-### 1. Editing a bounty, without touching a UUID
+This is where it stops being about typing. You have twelve bounties live. Three
+got fixed upstream, two need clearer descriptions, and a new bug needs funding.
 
-Open `bounties.yaml` and change the `content:` line. That is the whole edit.
+### With the official CLI
+
+First, find out what you have:
+
+```
+$ gibwork task list --profile stage --all
+ID                                    STATUS       OPEN   TITLE
+------------------------------------  -----------  -----  ------------------------------
+fcfb7a61-edd5-42f7-ad2e-59ae229bbac9  in progress  true   Fix memory leak in parser
+7b2e1f04-9c31-4a8d-b6e2-1f0a5c8d3e44  in progress  true   Document the CLI flags
+9c04ab13-2e77-4b10-a3f5-6d8e0b2c1a99  in progress  true   Add a benchmark suite
+3d5f8a10-4b2c-49e7-8f31-0c7a9e6b2d55  in progress  true   Fix flaky auth test
+b8e07c94-1a6d-4f52-9e88-2c4b7d0a3f61  in progress  true   Port config loader to TOML
+e1c39b27-8f04-4d6a-b512-7a90c6e8f4d3  in progress  true   Windows path handling
+                                             ... 6 more rows
+```
+
+Now, for each change, find the row, select the UUID, copy it, paste it:
+
+```bash
+$ gibwork task refund fcfb7a61-edd5-42f7-ad2e-59ae229bbac9 --profile stage
+$ gibwork task refund 9c04ab13-2e77-4b10-a3f5-6d8e0b2c1a99 --profile stage
+$ gibwork task refund e1c39b27-8f04-4d6a-b512-7a90c6e8f4d3 --profile stage
+$ gibwork task update 7b2e1f04-9c31-4a8d-b6e2-1f0a5c8d3e44 --profile stage --content-file docs.html
+$ gibwork task update 3d5f8a10-4b2c-49e7-8f31-0c7a9e6b2d55 --profile stage --content-file auth.html
+$ gibwork task create --profile stage \
+    --title "Fix Unicode crash in CSV export" \
+    --content-file csv.html --tag bug --tag python \
+    --amount 5.00 --min-submission 5.00
+```
+
+Six commands, six confirmations, **five UUIDs copied by hand**. There is no
+preview, so you find out whether you got it right by watching it happen six
+times. Paste the wrong UUID into one of those refunds and you close a bounty
+somebody is actively working on. Nothing warns you.
+
+### With gibwork-sync
+
+You edit one file. Delete three entries, change two `content:` lines, add one
+new entry. Then:
+
+```bash
+$ git diff bounties.yaml
+```
+
+```diff
+-- id: parser-leak
+-  title: "Fix memory leak in parser"
+-  content: "<p>Long-running processes accumulate memory.</p>"
+-  tags: [bug, rust]
+-  amount: "3.00"
+-
+ - id: docs-cli
+-  content: "<p>Every flag needs a line in the README.</p>"
++  content: "<p>Every flag needs a line in the README, with an example.</p>"
++
++- id: csv-unicode
++  title: "Fix Unicode crash in CSV export"
++  content: "<p>Non-ASCII column headers crash the exporter. See #211.</p>"
++  tags: [bug, python]
++  amount: "5.00"
+```
 
 ```bash
 $ gibwork-sync plan --profile stage
-  ~ update   fix-142          content  (fcfb7a61)
-
-Plan: 0 to create, 1 to update, 0 to refund.
-
-$ gibwork-sync apply --profile stage
-  updated fix-142 (content)
-Applied: 0 created, 1 updated, 0 refunded.
 ```
 
-This is fast and free. Changing a description does not send a transaction.
+```
+  + create   csv-unicode      5.00
+  ~ update   docs-cli         content  (7b2e1f04)
+  ~ update   auth-flaky       content  (3d5f8a10)
+  - refund   parser-leak      Fix memory leak in parser  (fcfb7a61)
+  - refund   bench-suite      Add a benchmark suite  (9c04ab13)
+  - refund   win-paths        Windows path handling  (e1c39b27)
+    6 unchanged
 
-Because the file is in git, `git log bounties.yaml` now tells you who changed
-that bounty, when, and why. That history does not exist anywhere else.
+Plan: 1 to create, 2 to update, 3 to refund.
+```
 
-### 2. It tells you when something is impossible
+```bash
+$ gibwork-sync apply --profile stage
+Apply these changes to stage? [y/N] y
+```
+
+**One screen showing everything that will happen, before any of it happens.**
+One confirmation instead of six. No UUID typed at any point, and the short
+hashes in brackets are output you can cross-check, not input you have to get
+right.
+
+And `git diff` means a teammate can review a bounty change in a pull request
+before it spends money, which is not possible when the change is six commands
+in somebody's shell history.
+
+### The part that is not about convenience
+
+Run the CLI block twice and you get three more refunds that fail, two more
+updates, and **a second "Fix Unicode crash in CSV export" bounty with a new
+UUID and another 5.00 USDC gone.**
+
+Run `gibwork-sync apply` twice and the second run prints:
+
+```
+    12 unchanged
+
+No changes. bounties.yaml matches live Gibwork state.
+```
+
+A command is an instruction, so it runs every time. A file is a description of
+how things should be, so running it twice is the same as running it once.
+
+---
+
+## Two more things worth seeing
+
+### 1. It tells you when something is impossible
 
 Gibwork does not let you change a bounty's reward after it is live. Only the
 description, deadline and verified-only setting can change.
@@ -274,7 +386,7 @@ error: unknown option '--amount'
 That tells you a flag is missing. It does not tell you the field is permanent,
 or what to do instead.
 
-### 3. It survives being killed halfway through
+### 2. It survives being killed halfway through
 
 This is the part that matters most, because creating a bounty moves real money.
 
@@ -320,6 +432,13 @@ Only some of those let you retry, and the tool knows which. Without this, a
 retry funds a second bounty, because Gibwork's task creation has no idempotency
 key to protect you.
 
+> **Why not just use the official CLI here?** You cannot. The official CLI has
+> recovery for *submissions* (`--recovery-file` and `gibwork submission
+> resume`), but there is nothing equivalent for creating a bounty. If
+> `gibwork task create` dies after the transaction is sent, nothing on your
+> machine knows the UUID, so there is no way to ask what happened. Your options
+> are to guess from `task list`, or run it again and risk paying twice.
+
 ---
 
 ## Already have bounties? Use import
@@ -349,6 +468,11 @@ writes nothing and tells you.
 already have, the tool has no record connecting them, so `plan` will say
 "create" for every one and `apply` will duplicate them all with real money.
 
+> **Why not just use the official CLI here?** There is nothing to import into.
+> The official CLI keeps no local record of your bounties, so every command
+> starts by asking the platform. This command only exists because gibwork-sync
+> keeps that record, and it has to be built correctly the first time.
+
 ---
 
 ## Writing the file with AI
@@ -374,6 +498,14 @@ Not applied:
 
 Whatever it writes is checked with the same parser `plan` uses before it
 reaches disk, so a bad edit fails here instead of later.
+
+> **Why not just use Gibwork's own agent skill?** Often you should.
+> `gibwork skills install claude` lets an AI drive the official CLI, and for a
+> one off bounty that is the simpler path. The difference is what the AI is
+> allowed to touch. Theirs calls the platform directly, so the model picks
+> which UUID to refund and asking twice creates two bounties. This one writes a
+> text file that you read before anything happens, and a model that hallucinates
+> a UUID here produces a file that fails to parse instead of a refunded bounty.
 
 ---
 
@@ -558,6 +690,11 @@ it as shown. Nothing in it is secret.
 
 And put the apply job behind a GitHub Environment with a required reviewer. A
 merge should not be able to spend from your wallet on its own.
+
+> **Why not just script the official CLI in CI?** You can script it, but you
+> cannot make it safe to re-run. With no record of what already exists, a
+> re-run creates everything again. That is fine for a deploy script and very
+> much not fine when each run costs money.
 
 ---
 
