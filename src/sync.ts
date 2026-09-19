@@ -42,8 +42,9 @@ export function registerSync(parent: Command, getRuntime: RuntimeFactory): Comma
     .command('import')
     .description("Generate bounties.yaml from this wallet's existing live tasks")
     .option('-f, --file <path>', 'path to write the bounties file', DEFAULT_FILE)
-    .action(async (opts: { file: string }) => {
-      await importCommand(await getRuntime(), { file: opts.file });
+    .option('--force', 'overwrite a bounties file that already has entries', false)
+    .action(async (opts: { file: string; force: boolean }) => {
+      await importCommand(await getRuntime(), { file: opts.file, force: opts.force });
     });
 
   /* The one verb that needs no wallet: it reads local files, calls Claude, and

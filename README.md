@@ -10,9 +10,9 @@ infrastructure.
 Built on the **[@gibwork/sdk](https://www.npmjs.com/package/@gibwork/sdk)**.
 It is a terminal tool: no web app, no dashboard, no browser.
 
-> **Status: `plan`, `apply`, `status` and `agent` are implemented** and covered
-> by 75 offline tests. `import` is the remaining stub. See
-> [Roadmap](#roadmap).
+> **Status: all five commands are implemented** — `plan`, `apply`, `status`,
+> `import` and `agent` — covered by 82 offline tests, with `plan`/`apply`/
+> `status` verified live against the stage API. See [Roadmap](#roadmap).
 
 ---
 
@@ -363,16 +363,65 @@ to re-apply, and that exactly one bounty was created — not zero, not two.
 
 ### CI
 
-`.github/workflows/sync.yml` typechecks and tests every PR, runs a read-only
-`plan` on branch PRs, and on merge to `main` runs `status` then `apply`.
+This repository's own workflow (`.github/workflows/ci.yml`) only typechecks,
+tests and builds. **It deliberately cannot reach Gibwork or spend money** — the
+`bounties.yaml` here is a sample, not a funded program.
 
-Because `apply` moves real funds, the apply job is pinned to a GitHub
-Environment named `gibwork` — add a required reviewer there so a merge cannot
-spend from the wallet without a human approving the run. Set the
-`GIBWORK_PRIVATE_KEY` secret and, to target production, the `GIBWORK_ENV`
-variable.
+If you adopt gibwork-sync for a real bounty program in your own repo, this is
+the workflow to copy:
 
----
+```yaml
+name: bounties
+on:
+  pull_request:
+    paths: ['bounties.yaml']
+  push:
+    branches: [main]
+    paths: ['bounties.yaml']
+
+concurrency:
+  # Two concurrent applies against one wallet is how you get duplicates.
+  group: bounties-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm i -g gibwork-sync
+      - env: { GIBWORK_PRIVATE_KEY: "${{ secrets.GIBWORK_PRIVATE_KEY }}" }
+        run: gibwork-sync plan --environment ${{ vars.GIBWORK_ENV }}
+
+  apply:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: gibwork          # add a required reviewer here
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm i -g gibwork-sync
+      - env: { GIBWORK_PRIVATE_KEY: "${{ secrets.GIBWORK_PRIVATE_KEY }}" }
+        run: |
+          gibwork-sync status --environment ${{ vars.GIBWORK_ENV }}
+          gibwork-sync apply --yes --environment ${{ vars.GIBWORK_ENV }}
+      - run: |                    # state.json is the id -> taskId memory
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          git add -f .gibwork/state.json
+          git commit -m "chore: sync bounty state" || true
+          git push
+```
+
+**Two things that are not optional in that workflow:**
+
+- **`.gibwork/state.json` must persist between runs.** It is the only record
+  linking each `id` to its Gibwork UUID. A fresh checkout without it sees an
+  empty map, reports every entry as `+ create`, and **duplicates every bounty
+  with real money.** Either commit it as shown (nothing in it is secret), or
+  rebuild it each run once `import` lands.
+- **Gate the apply job behind a GitHub Environment with a required reviewer.**
+  A merge should not be able to spend from the wallet unattended.
 
 ## How apply stays safe
 
@@ -407,7 +456,7 @@ nothing, so retrying it is free.
 - [x] `status` — resolves pending markers via `tasks.get(taskId)`
 - [x] Verified live on stage: `asset.amount` is base units, HTML round-trips
       byte-identically, and Gibwork auto-assigns a deadline
-- [ ] `import` round-trip
+- [x] `import`, with a zero-diff round-trip check before it writes
 - [ ] Live stage test for the interrupted-apply case
 
 ## License
