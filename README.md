@@ -1,374 +1,511 @@
 # gibwork-sync
 
-Declarative, version-controlled bounty management for [Gibwork](https://gibwork.fun).
+Manage your Gibwork bounties as a file instead of as a list of commands.
 
-Describe the bounties that *should* exist in a `bounties.yaml` file, preview
-the diff against live Gibwork state, then apply it — the same
-`plan` → review → `apply` loop as Terraform, pointed at bounties instead of
-infrastructure.
+You write down the bounties you want in `bounties.yaml`. You run one command to
+see what would change. You run a second command to make it happen.
 
-Built on the **[@gibwork/sdk](https://www.npmjs.com/package/@gibwork/sdk)**.
-It is a terminal tool: no web app, no dashboard, no browser.
+```bash
+$ gibwork-sync plan --profile stage
 
-> **Status: all five commands are implemented** — `plan`, `apply`, `status`,
-> `import` and `agent` — covered by 82 offline tests, with `plan`/`apply`/
-> `status` verified live against the stage API. See [Roadmap](#roadmap).
+  + create   docs-cli         1.00
+  ~ update   fix-142          content  (3f9c8a21)
+  - refund   old-audit        Old audit  (7b2e1f04)
+  ! blocked  perf-bench       (9c04ab13)
+             amount cannot be changed on a live bounty. Refund this bounty and
+             create a replacement, or revert the file.
+
+Plan: 1 to create, 1 to update, 1 to refund, 1 blocked.
+```
+
+Nothing happened there. That was a preview. You run `gibwork-sync apply` to
+actually do it.
+
+This is a terminal tool built on the [Gibwork SDK](https://www.npmjs.com/package/@gibwork/sdk).
+There is no web app and no dashboard.
+
+**Status:** all five commands work. 82 automated tests. `plan`, `apply`,
+`import` and `status` have been run against the live Gibwork stage API.
 
 ---
 
 ## The problem
 
-Every existing way to manage Gibwork bounties is **imperative** — you issue
-actions, one at a time, through the app or `@gibwork/cli`. That is fine for a
-single bounty. For a *set* that exists over time, four things go wrong, and an
-agent driving the CLI only fixes the first:
+Say you run bounties for your open source project. You have ten of them live.
 
-- **Friction** *(an agent closes this)*. Ten bounties is ten commands, and
-  editing one means running `gibwork task list`, scanning for it, and copying
-  its UUID. A coding agent will do all of that for you, so this is the weakest
-  of the four.
-- **Re-running duplicates instead of converging.** Ask an agent twice for
-  "two bounties named xanlo and preyce" and you get four bounties and a 4 USDC
-  bill. Actions accumulate; state does not.
-- **No record of what you intended.** Only the state that happens to exist
-  right now. Nothing says who raised a reward from 1 to 5, when, or why — and
-  nothing can tell you a bounty was edited in the app and no longer matches
-  what you meant.
-- **Interrupted creates are unrecoverable by default.** `tasks.create` runs a
-  prepare → sign → submit sequence a dropped connection can interrupt. Unlike
-  submissions, **`CreateTaskInput` carries no idempotency key** — so retrying
-  does not resume, it funds a *second* bounty, and the platform will not stop
-  you.
+Today you manage them one at a time. To change the description of one bounty,
+you list all your bounties, find the right one, copy its UUID, and run an
+update command with that UUID pasted in. To close three of them, you do that
+three more times.
 
-`gibwork-sync` puts the bounty set in a file, in git, and reconciles it — so
-re-running converges, intent is versioned, and an interrupted create is
-recoverable.
+An AI agent can do the typing for you, so that part is not the real problem.
+These four things are:
 
----
+**1. You cannot see what is about to happen.** There is no preview. You run a
+command and find out afterwards.
 
-## Why not the app, or the CLI, or the CLI with an agent?
+**2. Running the same thing twice creates duplicates.** Ask an agent twice for
+"two bounties for the parser bugs" and you get four bounties and a bill for
+four. A list of instructions repeats. A file does not.
 
-Gibwork already ships three ways to manage bounties, and **two of them are
-better than this tool for most single operations.** Being precise about where
-the line falls matters more than overselling:
+**3. Nothing records what you meant.** Only what currently exists. Six weeks
+later you cannot tell who raised a reward from 1 to 5, or when, or why. You
+also cannot tell if somebody edited a bounty in the mobile app and it no longer
+matches what you intended.
 
-| | Gibwork app | `@gibwork/cli` | CLI + agent skill | **gibwork-sync** |
-|---|---|---|---|---|
-| One ad-hoc bounty | **best** | good | good | worse |
-| Rich content, images, media | **yes** | partial | partial | **no** |
-| Finding a bounty's UUID | n/a | manual | agent does it | never needed |
-| A batch of ten changes | ten UI flows | ~13 commands | one prompt | one `apply` |
-| Preview every change first | no | no | model describes it | **`plan`, deterministic** |
-| Re-run the same request twice | n/a | duplicates | **duplicates** | **converges** |
-| Versioned record of intent | no | no | no | **yes (`git`)** |
-| Detect drift from intent | no | no | no | **yes** |
-| Runs with no LLM at all | yes | yes | **no** | **yes** |
-| Recover an interrupted create | no | no | no | **yes** |
-| Who decides what executes | you | you | **the model** | **a pure function** |
+**4. If a bounty creation gets interrupted, you are stuck.** Creating a bounty
+sends a real Solana transaction. If your laptop sleeps halfway through, you
+have no way to find out whether the money moved. Gibwork's task creation has no
+idempotency key, so if you just try again you fund a second bounty. The
+platform will not stop you.
 
-### What an agent closes, and what it doesn't
-
-An agent driving `@gibwork/cli` genuinely removes most of the friction: it
-finds UUIDs, loops over N operations, and writes the long flags for you. Any
-claim that gibwork-sync wins on *convenience* is stale the moment you have a
-coding agent open.
-
-Five differences are not convenience, and no amount of agent cleverness closes
-them:
-
-1. **Idempotence.** `"create 2 bounties named xanlo and preyce"` run twice
-   through an agent produces **four** bounties and spends 4 USDC. The same file
-   applied twice produces two, then reports `No changes.` A file describes a
-   *state*; a prompt describes an *action*.
-2. **The model never touches money.** With the skill, the LLM *is* the
-   executor — it picks which UUID to refund and calls the API. Here the LLM
-   writes a text file, deterministic code computes the diff, a human approves,
-   and deterministic code executes. A hallucinated UUID produces a file that
-   fails to parse instead of a refunded bounty.
-3. **A record of intent.** After an agent run you have bounties and a chat
-   transcript. `git log bounties.yaml` tells you who raised a reward, when, and
-   why — and makes bounty changes reviewable in a pull request.
-4. **Drift detection.** Because intent is recorded, `plan` can tell you *"this
-   bounty was edited in the app and no longer matches what you meant."* Without
-   a recorded intent there is nothing to compare against.
-5. **No LLM in the loop.** `plan` and `apply` need no API key, no tokens, no
-   model. That is what makes CI, cron, and unattended runs possible — you do
-   not want a model deciding what to refund at 3am.
-
-### The core problem
-
-**A bounty program is state, but every existing tool treats it as a series of
-actions.**
-
-Imperative tools work fine until you have a *set* that exists over time. Then
-you need answers no action-based tool can give:
-
-- What *should* exist, versus what *does*?
-- What changed since I last looked, and who changed it?
-- If I run this again, does it converge or duplicate?
-- If it died halfway through, what actually happened?
-
-gibwork-sync answers those by making the bounty set a file, diffing it against
-live state with a pure function, and never letting anything but that diff move
-money.
-
-### Who it is for
-
-**Maintainers running an ongoing bounty program** — a set that changes over
-time, ideally reviewed by more than one person, and which must survive being
-re-run.
-
-**Not for:** a single ad-hoc bounty (use the app), bounties needing rich
-formatting or images (use the app — this tool cannot upload media), or bounty
-hunters (Gibwork's own apps cover that side).
+gibwork-sync fixes 2, 3 and 4 by making the bounty list a file in git, and by
+never letting anything except a reviewed diff move money.
 
 ---
 
 ## How it works
 
-```
-bounties.yaml  ──┐
-                 ├─▶  gibwork-sync plan   ──▶  diff (read-only, no writes)
-live Gibwork  ───┘                                    │
-                                                 human review
-                                                      │
-                                              gibwork-sync apply
-                                                      │
-                            tasks.create / tasks.update / tasks.refund
-                                                      │
-                                          .gibwork/state.json
-                                     (id → taskId + content hash)
-```
+Three things get compared every time you run `plan`:
 
-`.gibwork/state.json` is what makes the loop work across runs: it maps your
-stable local `id` to the real Gibwork UUID, stores a content hash to detect
-drift, and records any operation that started but never confirmed.
+| | what it is | where it lives |
+|---|---|---|
+| what you want | your bounty list | `bounties.yaml` |
+| what you made | a map from your names to Gibwork's UUIDs | `.gibwork/state.json` |
+| what exists | your live bounties | Gibwork |
 
-### A bounty entry
+The middle one is why you never type a UUID. You call a bounty `fix-142`.
+Gibwork calls it `3f9c8a21-...`. The tool remembers which is which.
 
-```yaml
-- id: fix-142                  # stable local key, never the Gibwork UUID
-  issue: "#142"                # optional local reference, not sent to Gibwork
-  title: "Fix memory leak in parser"
-  content: "<p>Long-running processes accumulate memory. See #142.</p>"
-  tags: [bug, rust]
-  amount: "40.00"              # quoted — see below
-  minSubmission: "5.00"
-```
+Five commands:
 
-Two rules worth internalizing:
-
-- **`id` is yours and permanent.** Changing it reads as "refund the old
-  bounty, create a new one".
-- **Amounts are quoted strings.** Unquoted `40.00` is parsed by YAML as the
-  float `40`. Escrow amounts must never be rounded, so the loader rejects it.
-
-### What can and cannot change after creation
-
-The Gibwork API's `UpdateTaskInput` accepts only three fields. This is a
-platform constraint, not a limitation of this tool:
-
-| Field | Changeable on a live bounty? |
-|---|---|
-| `content` | yes |
-| `deadline` | yes |
-| `allowOnlyVerifiedSubmissions` | yes |
-| `title`, `tags`, `amount`, `mint`, `minSubmission` | **no** |
-
-Editing an immutable field is reported by `plan` as **blocked** rather than
-silently ignored: applying it would require refunding the bounty and creating
-a replacement, which is a real money movement and your decision to make.
+| command | what it does | costs money |
+|---|---|---|
+| `import` | Read your existing bounties and write the file for you. Run once. | no |
+| `plan` | Show what would change. Changes nothing. | no |
+| `apply` | Make the changes. | **yes** |
+| `status` | Clean up after an interrupted `apply`. | no |
+| `agent` | Rewrite the file from a plain English request. | no (needs an AI key) |
 
 ---
 
-## Setup
+## Install
 
-Requires **Node.js 22+** (the Gibwork SDK's floor). [Bun](https://bun.com) is
-used for development; the published CLI is plain Node and needs no Bun.
+You need Node.js 22 or newer.
 
 ```bash
-git clone <this-repo> && cd gibwork-sync
+npm install -g gibwork-sync
+```
+
+To run it from source instead:
+
+```bash
+git clone https://github.com/Shiva953/gibwork-sync
+cd gibwork-sync
+bun install && bun run build
+alias gibwork-sync="node $PWD/dist/index.js"
+```
+
+## Set up your wallet
+
+If you already use the official Gibwork CLI, **you are done.** gibwork-sync
+reads the same config file. Just pass `--profile`:
+
+```bash
+gibwork-sync plan --profile stage
+```
+
+If you do not, pick one of these:
+
+```bash
+# a keypair file (recommended)
+export GIBWORK_KEYPAIR_PATH=~/.config/gibwork/id.json
+
+# or the key itself
+export GIBWORK_PRIVATE_KEY=your-base58-key
+```
+
+Or pass the file directly: `gibwork-sync plan --keypair ~/.config/gibwork/id.json`
+
+### Environment variables
+
+| variable | what it does |
+|---|---|
+| `GIBWORK_KEYPAIR_PATH` | path to a Solana keypair JSON file |
+| `GIBWORK_PRIVATE_KEY` | the key itself, base58 or a JSON byte array |
+| `GIBWORK_PROFILE` | which profile from the Gibwork config to use |
+| `GIBWORK_ENVIRONMENT` | `stage` or `production` |
+| `ANTHROPIC_API_KEY` | only needed for `gibwork-sync agent` |
+
+Three rules the tool follows:
+
+- It never accepts a private key as a command line argument. Arguments show up
+  in your shell history and in `ps` output for other users on the machine.
+- It never reads `.env` on its own. Load it yourself with
+  `node --env-file=.env` if you want that.
+- Setting both `GIBWORK_KEYPAIR_PATH` and `GIBWORK_PRIVATE_KEY` is an error,
+  not a guess. You should never be unsure which wallet signed.
+
+### Stage is not free
+
+Gibwork's `stage` environment keeps your test bounties out of the main
+marketplace, but it settles in **real mainnet USDC**. The minimum bounty is
+1.00 USDC. Creating a bounty is fee free and refunding one costs about 0.01
+USDC, so a create and refund cycle costs about a cent.
+
+---
+
+## Quick start
+
+```bash
+mkdir my-bounties && cd my-bounties
+```
+
+Create `bounties.yaml`:
+
+```yaml
+- id: fix-142
+  title: "Fix memory leak in parser"
+  content: "<p>Long-running processes accumulate memory. See issue #142.</p>"
+  tags: [bug, rust]
+  amount: "1.00"
+  minSubmission: "1.00"
+```
+
+Then:
+
+```bash
+gibwork-sync plan --profile stage
+```
+
+```
+wallet 9K1Zp3wokoer3AVVTExhJkoudkfKSD939xGBJ4u6cx2h  ·  stage  ·  credentials from profile keypair
+
+  + create   fix-142          1.00
+
+Plan: 1 to create, 0 to update, 0 to refund.
+```
+
+```bash
+gibwork-sync apply --profile stage
+```
+
+```
+  + create   fix-142          1.00
+
+Plan: 1 to create, 0 to update, 0 to refund.
+Apply these changes to stage? [y/N] y
+
+  created fix-142 -> fcfb7a61-edd5-42f7-ad2e-59ae229bbac9
+
+Applied: 1 created, 0 updated, 0 refunded.
+```
+
+Your bounty is live. The tool wrote down which UUID it got:
+
+```bash
+$ cat .gibwork/state.json
+{
+  "version": 1,
+  "wallet": "9K1Zp3wokoer3AVVTExhJkoudkfKSD939xGBJ4u6cx2h",
+  "environment": "stage",
+  "tasks": {
+    "fix-142": {
+      "taskId": "fcfb7a61-edd5-42f7-ad2e-59ae229bbac9",
+      "lastAppliedHash": "2011b853086adb6c",
+      "lastSyncedAt": "2026-09-18T10:42:22.519Z"
+    }
+  },
+  "pending": []
+}
+```
+
+Keep that file. It is the only thing connecting `fix-142` to that UUID. If you
+delete it, the tool forgets the bounty exists and your money stays locked in
+escrow.
+
+---
+
+## Three things worth seeing
+
+### 1. Editing a bounty, without touching a UUID
+
+Open `bounties.yaml` and change the `content:` line. That is the whole edit.
+
+```bash
+$ gibwork-sync plan --profile stage
+  ~ update   fix-142          content  (fcfb7a61)
+
+Plan: 0 to create, 1 to update, 0 to refund.
+
+$ gibwork-sync apply --profile stage
+  updated fix-142 (content)
+Applied: 0 created, 1 updated, 0 refunded.
+```
+
+This is fast and free. Changing a description does not send a transaction.
+
+Because the file is in git, `git log bounties.yaml` now tells you who changed
+that bounty, when, and why. That history does not exist anywhere else.
+
+### 2. It tells you when something is impossible
+
+Gibwork does not let you change a bounty's reward after it is live. Only the
+description, deadline and verified-only setting can change.
+
+Change `amount: "1.00"` to `amount: "5.00"` and run plan:
+
+```
+  ! blocked  fix-142          (fcfb7a61)
+             amount cannot be changed on a live bounty. Refund this bounty and
+             create a replacement, or revert the file.
+
+Plan: 0 to create, 0 to update, 0 to refund, 1 blocked.
+```
+
+Exit code 30. No request was sent to Gibwork at all. Compare that to trying the
+same thing with the official CLI:
+
+```bash
+$ gibwork task update fcfb7a61-... --amount 5.00
+error: unknown option '--amount'
+```
+
+That tells you a flag is missing. It does not tell you the field is permanent,
+or what to do instead.
+
+### 3. It survives being killed halfway through
+
+This is the part that matters most, because creating a bounty moves real money.
+
+`apply` writes the new bounty's UUID to disk **before** it signs anything:
+
+```
+1. ask Gibwork to prepare the bounty      (nothing has been paid yet)
+2. write the UUID to .gibwork/state.json   <-- the important bit
+3. sign the transaction                    (still offline)
+4. send it                                 (money moves here)
+5. mark it done
+```
+
+Kill the process anywhere between steps 2 and 5 and the UUID is still on disk,
+so the next run can ask Gibwork what actually happened:
+
+```bash
+$ gibwork-sync apply --profile stage
+  ! create  fix-142          task fcfb7a61-edd5-42f7-ad2e-59ae229bbac9
+            last known status: processing
+apply refused: resolve the operations above first.
+# exit code 31
+
+$ gibwork-sync status --profile stage
+Resolving 1 unresolved operation(s)...
+
+  x create  fix-142          task was never created. Safe to apply again.
+            task fcfb7a61-edd5-42f7-ad2e-59ae229bbac9
+
+All clear. 0 confirmed, 1 safe to apply again.
+```
+
+There are four possible answers, and `status` picks the right one:
+
+| what Gibwork says | what it means | what happens |
+|---|---|---|
+| not found | it never got created | safe to try again |
+| still creating | the payment has not settled | **stays blocked**, try again in a minute |
+| open | it worked | adopted, you are done |
+| refunded | it got rolled back | safe to try again |
+
+Only some of those let you retry, and the tool knows which. Without this, a
+retry funds a second bounty, because Gibwork's task creation has no idempotency
+key to protect you.
+
+---
+
+## Already have bounties? Use import
+
+If you posted bounties through the Gibwork app or CLI, run this once:
+
+```bash
+gibwork-sync import --profile stage
+```
+
+It reads your live bounties and writes both files for you.
+
+```
+Reading live tasks...
+  fix-memory-leak-in-parser        1.00  (fcfb7a61)
+  document-the-cli-flags           1.00  (7b2e1f04)
+
+Imported 2 bounty(s) into bounties.yaml.
+Verified: the generated file reports zero changes against live state.
+```
+
+That last line is a safety check. Before writing anything, it compares the file
+it just built against your live bounties. If they do not match exactly, it
+writes nothing and tells you.
+
+**Do not skip this step.** If you hand write a file describing bounties you
+already have, the tool has no record connecting them, so `plan` will say
+"create" for every one and `apply` will duplicate them all with real money.
+
+---
+
+## Writing the file with AI
+
+If you would rather describe the change than edit YAML:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+gibwork-sync agent "add a bounty for the flaky test in #88 at 2 USDC, and close the docs one" --dry-run
+```
+
+It edits the file and stops. It never talks to Gibwork and it never spends
+anything. You still run `plan` and `apply` yourself.
+
+It also knows the rules, so it tells you when you ask for something that cannot
+be done:
+
+```
+Not applied:
+  ! change the reward on fix-142 to 7
+    amount is immutable on a live bounty. Refund it and create a replacement.
+```
+
+Whatever it writes is checked with the same parser `plan` uses before it
+reaches disk, so a bad edit fails here instead of later.
+
+---
+
+## All commands
+
+```
+gibwork-sync plan    [-f <file>]                 preview changes
+gibwork-sync apply   [-f <file>] [-y]            make changes
+gibwork-sync import  [-f <file>] [--force]       build the file from live bounties
+gibwork-sync status  [-f <file>] [--dry-run]     fix an interrupted apply
+gibwork-sync agent   "<request>" [--dry-run]     edit the file with AI
+```
+
+Options that work on every command:
+
+```
+--profile <name>          use a profile from the Gibwork config
+--environment <env>       stage or production
+--keypair <path>          path to a keypair file
+--private-key-stdin       read the key from a pipe
+--json                    machine readable output
+--quiet                   less printing
+```
+
+### Exit codes
+
+These match the official Gibwork CLI, so a script can treat both the same way.
+
+| code | meaning |
+|---|---|
+| 0 | done, or nothing to do |
+| 2 | bad flag, or a mistake in `bounties.yaml` |
+| 10 | wallet or config problem |
+| 20 | Gibwork returned an error |
+| 21 | network problem or timeout |
+| 22 | a payment result is unknown. run `status`, do not retry |
+| 30 | some changes are impossible |
+| 31 | an interrupted operation needs `status` |
+| 130 | you pressed Ctrl-C |
+
+### The file format
+
+```yaml
+- id: fix-142                 # your name for it. never changes. never sent to Gibwork
+  issue: "#142"               # optional note for you
+  title: "Fix memory leak"    # cannot change after the bounty is live
+  content: "<p>HTML here</p>" # can change
+  tags: [bug, rust]           # cannot change after the bounty is live
+  amount: "1.00"              # cannot change. must be quoted. 1.00 to 100000.00
+  minSubmission: "1.00"       # optional. defaults to the full amount
+  deadline: "2026-10-01T12:00:00.000Z"   # optional. can change
+  allowOnlyVerifiedSubmissions: false    # optional. can change
+```
+
+Two things that will bite you if you skip them:
+
+- **Quote the amount.** Unquoted `1.00` becomes the number `1` in YAML, and
+  rounding has no place near money. The tool refuses to load it.
+- **Never rename an `id` after applying.** The tool reads a rename as "refund
+  the old bounty, create a new one", and that moves real money.
+
+---
+
+## What this uses from Gibwork
+
+Built entirely on the **Gibwork SDK** (`@gibwork/sdk`). No CLI wrapping and no
+scraping.
+
+| what it does | SDK call |
+|---|---|
+| read your bounties | `tasks.list()` |
+| read one bounty in full | `tasks.get(taskId)` |
+| create a bounty | `tasks.prepareCreate()`, `signPreparedTransaction()`, `tasks.submitCreate()` |
+| edit a bounty | `tasks.update(taskId, input)` |
+| close a bounty | `tasks.prepareRefund()`, `tasks.submitRefund()` |
+| sign as your wallet | `createKeypairSigner()`, `new GibworkClient()` |
+
+The split create path is deliberate. The SDK also offers a one call
+`tasks.create()`, but that only returns after the money has moved. The split
+version hands you the bounty's UUID first, which is what makes the crash
+recovery above possible.
+
+Three things we found by testing against the live API, all handled in the code:
+
+- `asset.amount` comes back in base units as a string (`"1000000"` for 1 USDC),
+  while `minSubmissionAmount` on the same object comes back in whole tokens as
+  a number (`1`). The SDK's own type says `amount` is a number. It is a string.
+- Gibwork assigns a deadline even when you do not ask for one. Treating that as
+  a difference caused an update that could never finish, so fields you leave
+  out of the file are now left alone instead.
+- A bounty reward must be between 1.00 and 100000.00.
+
+---
+
+## What this does not do
+
+- **It cannot upload images.** Bounties needing screenshots or design files
+  should be written in the Gibwork app.
+- **It does not handle submissions.** Reviewing and paying people is done in
+  the app or the official CLI. This tool only manages the bounties themselves.
+- **It is not worth it for one bounty.** If you post a single bounty now and
+  then, use the app. This is for people running a set of bounties over time.
+- **`agent` needs an Anthropic API key.** Every other command works without it.
+
+---
+
+## Running the tests
+
+```bash
 bun install
+bun run typecheck
+bun run test        # 82 tests, no network, no money
 bun run build
 ```
 
-### Credentials
+The tests cover the comparison logic, the file parser, the state file, the
+crash recovery, and the import round trip. None of them touch the network.
 
-gibwork-sync reads the **same configuration file `@gibwork/cli` writes**, so a
-wallet you already set up with `gibwork config set` works here untouched:
-
-```bash
-gibwork config set keypair-path ~/.config/gibwork/id.json --profile stage
-gibwork-sync plan --profile stage        # no other flags needed
-```
-
-Resolution is **flag → environment variable → profile → default** for every
-setting, matching the official CLI exactly. For credentials specifically:
-
-1. `--keypair <path>` — an owner-only keypair file
-2. `--private-key-stdin` — piped only; never prompts, never echoes
-3. `GIBWORK_KEYPAIR_PATH`
-4. `GIBWORK_PRIVATE_KEY` — base58, or a JSON array of 32/64 bytes
-5. the selected profile's `keypair-path`
-
-Safety rules, all matching `@gibwork/cli`:
-
-- **A raw private key is never accepted as a command-line argument.** It would
-  land in your shell history and in `ps` output for every other user on the
-  machine.
-- **Ambiguity is an error, not a silent winner.** Setting both
-  `GIBWORK_KEYPAIR_PATH` and `GIBWORK_PRIVATE_KEY` fails rather than quietly
-  picking one — you should never be unsure which wallet signed.
-- **Keypair files are checked before they are read**: symlinks resolved, must
-  be a regular file, size-bounded, and rejected unless the mode is `0600` or
-  stricter. The key buffer is zeroed after the signer is built, and
-  `GIBWORK_PRIVATE_KEY` is deleted from the environment so nothing spawned
-  later inherits it.
-- **Production can only talk to the official API origin.** `--api-url` is
-  available for stage, but in production a non-official origin, embedded
-  credentials, or any redirect is refused — checked on both the request and the
-  response.
-- **`.env` is never loaded implicitly.** Opt in explicitly:
+There is a separate live test file that spends stage funds. It is opt in:
 
 ```bash
-cp .env.example .env     # then fill it in
-node --env-file=.env dist/index.js plan
+GIBWORK_LIVE_TEST=1 bun test test/live
 ```
-
-### Environments
-
-`--env stage` (default) and `--env production` map to the SDK's `production`
-flag. The setting is client-wide, so prepare and submit for one operation
-always hit the same backend. **Stage is the default on purpose** — nothing
-touches production funds unless you ask for it by name.
 
 ---
 
-## Usage
+## Using it in CI
 
-```bash
-gibwork-sync plan    [-f, --file <path>]              # read-only diff
-gibwork-sync apply   [-f, --file <path>] [-y]         # execute the diff
-gibwork-sync import  [-f, --file <path>]              # bootstrap from live state
-gibwork-sync status  [-f, --file <path>] [--dry-run]  # resolve interrupted runs
-gibwork-sync agent   "<prompt>" [--dry-run]           # rewrite the file from a request
-```
+This repository's own workflow only builds and tests. It cannot reach Gibwork.
 
-Global flags, spelled exactly as `@gibwork/cli` spells them:
-
-```
---profile <name>           --keypair <path>          --json
---environment <env>        --private-key-stdin       --quiet
---api-url <url>            --allow-insecure-http     --no-color
---timeout <milliseconds>
-```
-
-`--json` emits the same envelope the official CLI does — `{"ok":true,"data":…}`
-on success, `{"ok":false,"error":{"code","message"}}` on failure — so a script
-can parse either tool with one code path. `apply --json` requires `--yes`,
-since a prompt would corrupt the stream.
-
-Ctrl-C aborts in-flight work and exits `130`. State is written before anything
-is signed, so an abort is always recoverable with `status`.
-
-**Exit codes** — `apply` and `plan` are designed to be gated on in CI:
-
-| Code | Meaning |
-|---|---|
-| 0 | applied, or nothing to do |
-| 1 | internal / protocol / recovery error |
-| 2 | usage error — bad flag, or invalid `bounties.yaml` |
-| 10 | credential or config error |
-| 20 | Gibwork API error |
-| 21 | network error or timeout |
-| 22 | ambiguous submit — run `status`, do **not** retry |
-| 30 | blocked entries remain (desired state not reached) |
-| 31 | unresolved operations — run `status` before applying again |
-| 130 | cancelled |
-
-Codes 0–29 and 130 are reproduced from `@gibwork/cli` so a CI script can treat
-both tools identically. The 30s are gibwork-sync's own, and they are **not**
-errors — the run succeeded, but live state is not what the file asked for. The
-official CLI sets the same precedent with `gibwork mcp doctor`, which exits 30
-for a non-error "not ready" verdict.
-
-### Typical loop
-
-```bash
-$EDITOR bounties.yaml
-node --env-file=.env dist/index.js plan      # review the diff
-node --env-file=.env dist/index.js apply     # confirm, then execute
-```
-
-### Adopting an existing bounty set
-
-```bash
-node --env-file=.env dist/index.js import    # writes bounties.yaml + state.json
-node --env-file=.env dist/index.js plan      # must report zero changes
-```
-
-That zero-diff round trip is the acceptance check. If `plan` shows changes
-immediately after `import`, the import was lossy — fix that before trusting
-the file as your source of truth.
-
-### After an interrupted run
-
-```bash
-node --env-file=.env dist/index.js status            # resolve
-node --env-file=.env dist/index.js status --dry-run  # inspect only
-```
-
-`apply` writes a pending marker to `state.json` *before* it signs anything and
-clears it only on a confirmed terminal state. Anything left behind means the
-process died mid-flight, and `apply` refuses to touch that entry until it is
-resolved — that refusal happens before any network call, so it costs nothing.
-
-`status` reads each interrupted operation back from Gibwork and settles the
-local record. It only ever READS from the API — no transaction is signed and no
-funds move — but it does rewrite `state.json`, which is what unblocks `apply`:
-
-| What `tasks.get(taskId)` shows | Verdict | Result |
-|---|---|---|
-| 404 | never landed | marker cleared, safe to apply again |
-| `status: creating` | still settling | **marker kept** — retrying could double-fund |
-| open / live | succeeded | adopted into `tasks`, marker cleared |
-| `status: refunded` | rolled back | dropped, safe to apply again |
-
-This works only because `prepareCreate` returns the `taskId` before any funds
-move. There is no `tasks.getIntent()` in the SDK — reading the task back *is*
-the reconciliation.
-
----
-
-## Development
-
-```bash
-bun run typecheck     # tsc --noEmit
-bun test              # offline suite: no network, no funds
-bun run build         # emit dist/
-bun run dev -- plan   # run from source
-```
-
-The offline suite covers the diff engine, the YAML loader, and the state store
-with no network access. Live tests hit the **stage** environment and spend
-stage funds, so they are opt-in:
-
-```bash
-GIBWORK_LIVE_TEST=1 bun --env-file=.env test test/live
-```
-
-The test that matters most is in `test/live/interrupt.test.ts`: kill `apply`
-mid-flight, then verify `status` identifies the unresolved operation, refuses
-to re-apply, and that exactly one bounty was created — not zero, not two.
-
-### CI
-
-This repository's own workflow (`.github/workflows/ci.yml`) only typechecks,
-tests and builds. **It deliberately cannot reach Gibwork or spend money** — the
-`bounties.yaml` here is a sample, not a funded program.
-
-If you adopt gibwork-sync for a real bounty program in your own repo, this is
-the workflow to copy:
+For your own project, the useful setup is a preview on every pull request and
+an apply on merge:
 
 ```yaml
 name: bounties
@@ -380,8 +517,7 @@ on:
     paths: ['bounties.yaml']
 
 concurrency:
-  # Two concurrent applies against one wallet is how you get duplicates.
-  group: bounties-${{ github.ref }}
+  group: bounties-${{ github.ref }}   # two applies at once creates duplicates
   cancel-in-progress: false
 
 jobs:
@@ -397,7 +533,7 @@ jobs:
   apply:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: gibwork          # add a required reviewer here
+    environment: gibwork        # add a required reviewer to this environment
     steps:
       - uses: actions/checkout@v4
       - run: npm i -g gibwork-sync
@@ -405,60 +541,35 @@ jobs:
         run: |
           gibwork-sync status --environment ${{ vars.GIBWORK_ENV }}
           gibwork-sync apply --yes --environment ${{ vars.GIBWORK_ENV }}
-      - run: |                    # state.json is the id -> taskId memory
-          git config user.name  github-actions
+      - run: |
+          git config user.name github-actions
           git config user.email github-actions@github.com
           git add -f .gibwork/state.json
           git commit -m "chore: sync bounty state" || true
           git push
 ```
 
-**Two things that are not optional in that workflow:**
+Two things there are not optional.
 
-- **`.gibwork/state.json` must persist between runs.** It is the only record
-  linking each `id` to its Gibwork UUID. A fresh checkout without it sees an
-  empty map, reports every entry as `+ create`, and **duplicates every bounty
-  with real money.** Either commit it as shown (nothing in it is secret), or
-  rebuild it each run once `import` lands.
-- **Gate the apply job behind a GitHub Environment with a required reviewer.**
-  A merge should not be able to spend from the wallet unattended.
+`.gibwork/state.json` has to survive between runs. It is gitignored by default
+because it belongs to one wallet, but CI needs it. A fresh checkout without it
+sees an empty map, calls every bounty new, and duplicates all of them. Commit
+it as shown. Nothing in it is secret.
 
-## How apply stays safe
+And put the apply job behind a GitHub Environment with a required reviewer. A
+merge should not be able to spend from your wallet on its own.
 
-`CreateTaskInput` carries **no idempotency key**, so re-running an interrupted
-create allocates a *new* task and funds a second bounty. The platform will not
-stop you. That is the risk this tool exists to remove.
+---
 
-`prepareCreate()` returns the `taskId` *before* any funds move, so `apply` uses
-the split prepare/sign/submit path rather than the all-in-one `tasks.create()`,
-and writes the task id to disk before a signature exists anywhere:
+## Demo
 
-```
-① prepareCreate(input)        → { intentId, taskId, serializedTransaction }
-② saveState(pending{taskId})  ← atomic temp+rename   ◄── crash window opens
-③ signPreparedTransaction()     local only, no network
-④ submitCreate(intentId, tx)    funds move here
-⑤ status==='confirmed' → recordTask + clearPending   ◄── window closes
-```
+Video: _add your link here_
 
-Killed anywhere between ② and ⑤, the marker survives *with the task id*, and
-`status` resolves it by reading the task back. `status: 'processing'` is not
-treated as success. `tasks.update` gets none of this, deliberately — it signs
-nothing, so retrying it is free.
+Screenshots: see [`docs/screenshots/`](docs/screenshots/)
 
-## Roadmap
-
-- [x] CLI surface, credential resolution, YAML loader, state store
-- [x] `src/lib/diff.ts` — the reconciliation engine (pure, table-tested)
-- [x] `plan` wired to the engine
-- [x] `apply` with the crash barrier and rate-limit pacing (prepare 2/min,
-      submit 5/min)
-- [x] `status` — resolves pending markers via `tasks.get(taskId)`
-- [x] Verified live on stage: `asset.amount` is base units, HTML round-trips
-      byte-identically, and Gibwork auto-assigns a deadline
-- [x] `import`, with a zero-diff round-trip check before it writes
-- [ ] Live stage test for the interrupted-apply case
+---
 
 ## License
 
-MIT
+MIT. This is a community tool built for the Gibwork Developer Hackathon. It is
+not an official Gibwork product.
