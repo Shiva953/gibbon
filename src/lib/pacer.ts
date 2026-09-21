@@ -1,3 +1,4 @@
+import { GibworkApiError } from '@gibwork/sdk';
 import { CliError, EXIT } from './errors.js';
 
 /**
@@ -9,8 +10,16 @@ import { CliError, EXIT } from './errors.js';
  * `sleep` and `now` are injectable so tests can assert pacing without real
  * time passing.
  */
-export const PREPARE_INTERVAL_MS = 30_000; // 2 per minute
-export const SUBMIT_INTERVAL_MS = 12_000; // 5 per minute
+/*
+ * These must be strictly GREATER than 60000/N, not equal to it.
+ *
+ * Spacing requests exactly 60/N apart puts N+1 of them inside a sliding
+ * 60-second window: at 30s apart, requests land at 0s, 30s and 60s, and the
+ * window [0,60] holds all three against a limit of two. Found the hard way
+ * when a third refund returned HTTP 429 on a live stage run.
+ */
+export const PREPARE_INTERVAL_MS = 35_000; // limit is 2/min -> 0s, 35s, 70s
+export const SUBMIT_INTERVAL_MS = 16_000; // limit is 5/min -> 4 per window
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
 
@@ -88,6 +97,24 @@ export class Pacer {
    */
   async backoff(retryAfter?: string): Promise<void> {
     await this.sleep(parseRetryAfter(retryAfter, this.now()) ?? this.prepareIntervalMs, this.signal);
+  }
+
+  /**
+   * Runs a rate-limited call, waiting and retrying once on HTTP 429.
+   *
+   * Only safe for calls that move no money. A 429 means the request was
+   * rejected before it was processed, so re-issuing a prepare is harmless;
+   * a submit is never retried here, because its marker is already on disk
+   * and `status` is the correct way to resolve it.
+   */
+  async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!(error instanceof GibworkApiError) || error.status !== 429) throw error;
+      await this.backoff(error.retryAfter);
+      return operation();
+    }
   }
 }
 

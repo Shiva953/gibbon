@@ -73,7 +73,10 @@ export async function execUpdate(
   state: SyncState,
   planned: PlannedUpdate,
 ): Promise<ExecResult> {
-  await deps.client.tasks.update(planned.taskId, toUpdateInput(planned), req(deps));
+  // Safe to retry: update signs nothing, so a 429 costs only time.
+  await deps.pacer.withRetry(() =>
+    deps.client.tasks.update(planned.taskId, toUpdateInput(planned), req(deps)),
+  );
 
   const next = recordTask(state, planned.entry.id, planned.taskId, planned.entry);
   deps.save(next);
@@ -97,7 +100,9 @@ export async function execCreate(
 ): Promise<ExecResult> {
   // (1) PREPARE — no funds move. Yields taskId + intentId.
   await deps.pacer.prepare();
-  const prepared = await deps.client.tasks.prepareCreate(toCreateInput(entry), req(deps));
+  const prepared = await deps.pacer.withRetry(() =>
+    deps.client.tasks.prepareCreate(toCreateInput(entry), req(deps)),
+  );
 
   // (2) BARRIER — reach the disk before a signature exists anywhere.
   const marker = {
@@ -162,7 +167,9 @@ export async function execRefund(
   target: Plan['toRefund'][number],
 ): Promise<ExecResult> {
   await deps.pacer.prepare();
-  const prepared = await deps.client.tasks.prepareRefund(target.taskId, req(deps));
+  const prepared = await deps.pacer.withRetry(() =>
+    deps.client.tasks.prepareRefund(target.taskId, req(deps)),
+  );
 
   const marker = {
     id: target.id,
