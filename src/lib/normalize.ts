@@ -3,16 +3,15 @@ import type { BountyEntry, LiveTask, ResolvedEntry } from '../types.js';
 import { DEFAULT_MINT } from '../types.js';
 
 /**
- * Renders a whole-token amount as a canonical decimal string.
- *
- * Used for `minSubmissionAmount`, which the API reports in WHOLE TOKENS as a
- * number (1 means 1.00 USDC). Not for `asset.amount` — see formatBaseUnits.
+ * Renders a whole-token amount as a canonical decimal string. For
+ * `minSubmissionAmount`, which the API reports in whole tokens — not for
+ * `asset.amount`, which is base units. See formatBaseUnits.
  */
 export function formatAmount(value: number | string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   const n = typeof value === 'string' ? Number(value) : value;
   if (!Number.isFinite(n)) return null;
-  // Trim trailing zeros so "40.00", "40.0" and 40 all compare equal.
+  // Trailing zeros trimmed so "40.00", "40.0" and 40 compare equal.
   return String(Number(n.toFixed(9)));
 }
 
@@ -24,18 +23,14 @@ export function normalizeAmount(value: string): string {
 /**
  * Converts a base-unit amount into a canonical whole-token decimal string.
  *
- * Verified against the live API, which is inconsistent between two fields of
- * the same object:
+ * The live API mixes both units on the same object, and declares a string
+ * field as a number, so both forms are accepted:
  *
  *   asset.amount        "1000000"  base units, as a string   (decimals: 6)
  *   minSubmissionAmount 1          whole tokens, as a number
  *
- * The SDK's typedef declares `asset.amount: number`; the wire format is a
- * string, so both are accepted here.
- *
- * Returns null when `decimals` is absent rather than guessing a scale —
- * an unknown value is treated as "not reported" and skipped by the diff,
- * which is preferable to manufacturing drift a maintainer cannot act on.
+ * Returns null when `decimals` is absent rather than guessing a scale; the
+ * diff then treats it as "not reported" instead of manufacturing drift.
  */
 export function formatBaseUnits(
   value: string | number | null | undefined,
@@ -51,11 +46,10 @@ export function formatBaseUnits(
 }
 
 /**
- * Applies defaults once, so every downstream consumer agrees on what an entry
- * means. `minSubmission` defaults to the full amount — a single-winner bounty,
- * the common shape — because `CreateTaskInput.minSubmissionAmount` is required
- * and silently picking a smaller value would let the pot be fragmented in ways
- * the file never asked for.
+ * Applies defaults once, so hashing, diffing and creating all agree on what an
+ * entry means. `minSubmission` defaults to the full amount (a single-winner
+ * bounty) because the API requires it and a smaller default would silently
+ * let the pot be split in ways the file never asked for.
  */
 export function resolveEntry(entry: BountyEntry): ResolvedEntry {
   return {
@@ -84,21 +78,13 @@ export function toLiveTask(details: TaskDetails, summary?: WalletTaskSummary): L
 }
 
 /**
- * Compares two HTML content blobs.
+ * Compares two HTML content blobs. Deliberately conservative: only line
+ * endings and surrounding whitespace are normalized.
  *
- * Deliberately CONSERVATIVE: only line endings and surrounding whitespace are
- * normalized. Internal whitespace stays significant.
- *
- * The temptation is to collapse whitespace between tags, in case the API
- * re-serializes stored HTML and produces permanent phantom drift. But we have
- * not yet confirmed that it does, and the two failure modes are not equally
- * bad. Over-normalizing makes the tool silently ignore a real edit — the
- * maintainer changes their bounty text, `plan` reports "no changes", and the
- * live bounty never updates. Under-normalizing at worst re-applies identical
- * content, which is one free, unsigned `tasks.update` call.
- *
- * Verify against stage (create a task, read it back, byte-compare) before
- * loosening this. TODO in the roadmap.
+ * Collapsing whitespace between tags would guard against phantom drift if the
+ * API re-serializes stored HTML, but over-normalizing silently swallows a real
+ * edit, while under-normalizing costs at most one free, unsigned update.
+ * Verify against stage before loosening this.
  */
 export function contentEquals(a: string, b: string): boolean {
   return normalizeContent(a) === normalizeContent(b);

@@ -67,15 +67,11 @@ export function renderPending(pending: PendingOperation[]): string {
   return lines.join('\n');
 }
 
-/* ------------------------------------------------------------------ *
- * Machine-readable output
- *
- * The envelope matches @gibwork/cli exactly — {"ok":true,"data":...} on
- * success, {"ok":false,"error":{code,message}} on failure — so a script can
- * parse either tool's output with the same code path.
- * ------------------------------------------------------------------ */
+/* Machine-readable output. The envelope matches @gibwork/cli exactly —
+   {"ok":true,"data":...} / {"ok":false,"error":{code,message}} — so a script
+   can parse either tool's output with the same code path. */
 
-/** Writes one success envelope. Always a single line, always newline-terminated. */
+/** Writes one success envelope: a single, newline-terminated line. */
 export function emitJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify({ ok: true, data })}\n`);
 }
@@ -127,10 +123,7 @@ export function pendingToJson(pending: PendingOperation[]): Record<string, unkno
   }));
 }
 
-/**
- * A minimal LCS line diff, so `agent` can show what it changed without
- * assuming the file is in git.
- */
+/** A minimal LCS line diff, so `agent` can show its edit without needing git. */
 export function diffLines(before: string, after: string): string[] {
   const a = before.split('\n');
   const b = after.split('\n');

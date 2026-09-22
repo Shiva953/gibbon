@@ -24,26 +24,20 @@ function readIfPresent(path: string): string {
 /**
  * Rewrites bounties.yaml from a natural-language request.
  *
- * Deliberately the one command that needs no wallet: it reads local files and
- * calls Claude, then writes a file. Nothing here contacts Gibwork, signs
- * anything, or spends money — `plan` and `apply` remain the only path to the
- * platform, and both still require a human.
- *
- * The model's output is never trusted. It is re-parsed with this project's own
- * loader before the file is written, so an invalid edit fails here rather than
- * at apply time.
+ * The one command that needs no wallet: it reads local files, calls Claude and
+ * writes a file — it never contacts Gibwork or signs anything. The model's
+ * output is re-parsed with our own loader before it reaches disk.
  */
 export async function agentCommand(options: AgentOptions): Promise<void> {
   if (!options.prompt.trim()) {
     throw new CliError('Describe the change you want, in quotes.', 'USAGE_ERROR', EXIT.USAGE);
   }
 
-  // Fail before doing any work if Claude is unreachable.
   assertAnthropicCredentials();
 
   const currentYaml = readIfPresent(options.file);
 
-  // Parsing the current file is best-effort: the request may well be "fix it".
+  // Best-effort: the request may well be "fix the broken file".
   let entries: ReturnType<typeof parseBounties> = [];
   try {
     entries = parseBounties(currentYaml, options.file);
@@ -51,7 +45,7 @@ export async function agentCommand(options: AgentOptions): Promise<void> {
     process.stdout.write(`\n(${options.file} does not currently parse; asking for a repair)\n`);
   }
 
-  // Live ids come from local state — no network call, no credentials.
+  // From local state, so no network call and no credentials.
   const liveIds = Object.keys(loadState().tasks);
 
   process.stdout.write('\nAsking Claude to edit the file...\n');
@@ -63,7 +57,6 @@ export async function agentCommand(options: AgentOptions): Promise<void> {
     ...(options.model ? { model: options.model } : {}),
   });
 
-  // Validate with our own loader before anything reaches disk.
   try {
     parseBounties(result.yaml, 'the proposed file');
   } catch (error) {
@@ -98,8 +91,6 @@ export async function agentCommand(options: AgentOptions): Promise<void> {
     for (const assumption of result.assumptions) process.stdout.write(`  · ${assumption}\n`);
   }
 
-  // The reason this command exists: catching impossible edits at authoring
-  // time rather than after a network round trip.
   if (result.refused.length > 0) {
     process.stdout.write('\nNot applied:\n');
     for (const refusal of result.refused) {

@@ -11,12 +11,8 @@ export interface PlanOptions {
 }
 
 /**
- * Read-only. Diffs bounties.yaml against live Gibwork state and prints the
- * result. Calls only tasks.list and tasks.get — nothing here writes, signs,
- * or moves funds.
- *
- * Exits UNRESOLVED (31) when an interrupted operation is outstanding, so the
- * gate `apply` enforces is visible before you get there.
+ * Diffs bounties.yaml against live Gibwork state and prints the result.
+ * Read-only: calls only tasks.list and tasks.get, and signs nothing.
  */
 export async function planCommand(runtime: Runtime, options: PlanOptions): Promise<void> {
   const { client, walletAddress, environment, credentialSource, profileName, signal, output } =
@@ -48,9 +44,7 @@ export async function planCommand(runtime: Runtime, options: PlanOptions): Promi
     if (state.pending.length > 0) process.stdout.write(renderPending(state.pending));
   }
 
-  // Blocked entries mean the desired state cannot be reached, so CI can gate
-  // on plan alone. Unresolved operations outrank them: they block apply
-  // entirely, so that is the more urgent thing to report.
+  // Both are reportable in CI. Unresolved wins: it blocks apply entirely.
   if (plan.blocked.length > 0) process.exitCode = EXIT.BLOCKED;
   if (state.pending.length > 0) process.exitCode = EXIT.UNRESOLVED;
 }

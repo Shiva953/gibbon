@@ -23,12 +23,9 @@ export function emptyState(): SyncState {
 }
 
 /**
- * Hash of the Gibwork-relevant fields of an entry.
- *
- * `id` and `issue` are deliberately excluded: `id` is the lookup key rather
- * than content, and `issue` is a local cross-reference that is never sent to
- * Gibwork, so editing it must not show up as drift. Keys are sorted so the
- * hash does not depend on YAML key order.
+ * Hash of the Gibwork-relevant fields of an entry. `id` is the lookup key and
+ * `issue` is never sent to Gibwork, so neither counts as drift. Keys are
+ * sorted so the hash does not depend on YAML key order.
  */
 export function hashEntry(entry: BountyEntry): string {
   const canonical = {
@@ -87,9 +84,8 @@ export function loadState(cwd: string = process.cwd()): SyncState {
 }
 
 /**
- * Writes state.json atomically (temp file + rename), so a process killed
- * mid-write cannot leave a half-written state file behind. That matters here:
- * this file is the only record of what an interrupted apply was doing.
+ * Writes state.json atomically (temp file + rename): this is the only record
+ * of what an interrupted apply was doing, so it must never be half-written.
  */
 export function saveState(state: SyncState, cwd: string = process.cwd()): void {
   const path = stateFilePath(cwd);
@@ -117,11 +113,9 @@ export function clearPending(
 }
 
 /**
- * Records a confirmed create/update so future runs can detect drift.
- *
- * `entry` is optional because `status` may adopt a task whose file entry has
- * since been deleted. In that case there is nothing to hash, and the mapping
- * itself is the part worth keeping.
+ * Records a confirmed create/update so future runs can detect drift. `entry`
+ * is optional because `status` may adopt a task whose file entry is gone — the
+ * mapping is still worth keeping even with nothing to hash.
  */
 export function recordTask(
   state: SyncState,
@@ -146,18 +140,15 @@ export function forgetTask(state: SyncState, id: string): SyncState {
 
 /**
  * Guards against reading one wallet's or environment's state as another's.
- *
- * Without this, running `--environment production` against a stage state file
- * would show every tracked task as missing from live, and every file entry as
- * needing creation — a plan that could refund or duplicate real bounties.
+ * Running production against a stage state file would show every tracked task
+ * as missing and every entry as new — a plan that could duplicate real bounties.
  */
 export function assertStateMatches(
   state: SyncState,
   wallet: string,
   environment: Environment,
 ): void {
-  // Same situation @gibwork/cli guards before submission recovery, so it
-  // reports the same code and echoes its wording.
+  // Same guard @gibwork/cli applies before submission recovery, same wording.
   if (state.wallet && state.wallet !== wallet) {
     throw new CliError(
       'Recovery requires the original wallet, environment, and API location. ' +

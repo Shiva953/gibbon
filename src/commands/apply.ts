@@ -20,8 +20,7 @@ export interface ApplyOptions {
 }
 
 async function confirm(question: string): Promise<boolean> {
-  // Refuse rather than hang when there is nobody to answer. @gibwork/cli
-  // checks both streams, so match it.
+  // Refuse rather than hang when there is nobody to answer.
   if (!process.stdin.isTTY || !process.stderr.isTTY) {
     throw new Error('No TTY available to confirm. Re-run with --yes to apply without prompting.');
   }
@@ -64,17 +63,11 @@ function reportFailure(error: unknown): void {
 /**
  * Reconciles live Gibwork state to match bounties.yaml.
  *
- * Order of operations is deliberate:
- *   1. refuse to start if a previous run left anything unresolved
- *   2. recompute the plan (never trust a stale one)
- *   3. confirm
- *   4. updates first — they are free and sign nothing, so a crash during the
- *      expensive phase still banks them
- *   5. creates, then refunds, each with the prepare/persist/sign/submit barrier
+ * The order is deliberate: refuse to start while a previous run is unresolved,
+ * recompute the plan, confirm, then updates before creates and refunds.
  *
- * Exit codes follow @gibwork/cli: 0 applied · 30 blocked entries remain
- * · 31 unresolved operations · 2/10/20/21/22 for usage, credential, API,
- * network and ambiguous-submit failures.
+ * Exit codes follow @gibwork/cli: 0 applied · 30 blocked · 31 unresolved ·
+ * 2/10/20/21/22 for usage, credential, API, network and ambiguous submit.
  */
 export async function applyCommand(runtime: Runtime, options: ApplyOptions): Promise<void> {
   const { client, signer, walletAddress, environment, credentialSource, signal, output } = runtime;
@@ -86,7 +79,7 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
 
   const initial = loadState();
 
-  // (1) The watchdog gate. Before any network call, before any money.
+  // The watchdog gate, before any network call or any money.
   if (initial.pending.length > 0) {
     if (output.json) {
       emitJson({
@@ -113,7 +106,7 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
     );
   }
 
-  // (2) Recompute. The plan you confirm is the plan that runs.
+  // Recompute: the plan you confirm is the plan that runs.
   const { live } = await fetchLiveTasks(client, initial, signal);
   const plan = computePlan({ desired, live, state: initial });
   if (!output.json) process.stdout.write(renderPlan(plan));
@@ -126,7 +119,6 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
     return;
   }
 
-  // (3) Confirm.
   if (!options.yes) {
     const approved = await confirm(`Apply these changes to ${environment}?`);
     if (!approved) {
@@ -153,12 +145,12 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
   if (!output.json && !output.quiet) process.stdout.write('\n');
 
   try {
-    // (4) Cheap and unsigned first.
+    // Updates sign nothing, so running them first banks them against a later crash.
     for (const update of plan.toUpdate) {
       state = (await execUpdate(deps, state, update)).state;
     }
 
-    // (5) Then the operations that move funds.
+    // Then the operations that move funds.
     for (const entry of plan.toCreate) {
       const result = await execCreate(deps, state, entry);
       state = result.state;

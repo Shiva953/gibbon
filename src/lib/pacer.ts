@@ -2,21 +2,15 @@ import { GibworkApiError } from '@gibwork/sdk';
 import { CliError, EXIT } from './errors.js';
 
 /**
- * Paces requests against the documented per-wallet limits: prepare 2/minute,
- * submit 5/minute. Exceeding them would fail mid-apply, which for a signed
- * operation is exactly the ambiguous state this tool exists to avoid — so the
- * executor waits rather than retries.
+ * Paces requests against the per-wallet limits: prepare 2/minute, submit
+ * 5/minute. Exceeding them fails mid-apply, which for a signed operation is
+ * the ambiguous state this tool exists to avoid — so we wait rather than retry.
  *
- * `sleep` and `now` are injectable so tests can assert pacing without real
- * time passing.
- */
-/*
- * These must be strictly GREATER than 60000/N, not equal to it.
+ * `sleep` and `now` are injectable so tests need no real time.
  *
- * Spacing requests exactly 60/N apart puts N+1 of them inside a sliding
- * 60-second window: at 30s apart, requests land at 0s, 30s and 60s, and the
- * window [0,60] holds all three against a limit of two. Found the hard way
- * when a third refund returned HTTP 429 on a live stage run.
+ * The intervals must be strictly GREATER than 60000/N: spacing exactly 60/N
+ * apart puts N+1 requests in a sliding 60s window (0s, 30s and 60s all land in
+ * [0,60]), which is how a third refund hit HTTP 429 on a live stage run.
  */
 export const PREPARE_INTERVAL_MS = 35_000; // limit is 2/min -> 0s, 35s, 70s
 export const SUBMIT_INTERVAL_MS = 16_000; // limit is 5/min -> 4 per window
@@ -27,7 +21,7 @@ function cancelled(): CliError {
   return new CliError('Cancelled.', 'CANCELLED', EXIT.CANCELLED);
 }
 
-/** Interruptible: a 30s pace wait must not swallow Ctrl-C. */
+/** Interruptible: a 35s pace wait must not swallow Ctrl-C. */
 const realSleep: Sleep = (ms, signal) =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -80,8 +74,8 @@ export class Pacer {
   }
 
   private async gate(last: number, intervalMs: number): Promise<number> {
-    // Checked before waiting and again after, so a cancel during the wait stops
-    // the run before the next signed operation starts.
+    // Checked before and after the wait, so a cancel during it stops the run
+    // before the next signed operation starts.
     if (this.signal?.aborted) throw cancelled();
     if (last !== 0) {
       const elapsed = this.now() - last;
@@ -100,12 +94,9 @@ export class Pacer {
   }
 
   /**
-   * Runs a rate-limited call, waiting and retrying once on HTTP 429.
-   *
-   * Only safe for calls that move no money. A 429 means the request was
-   * rejected before it was processed, so re-issuing a prepare is harmless;
-   * a submit is never retried here, because its marker is already on disk
-   * and `status` is the correct way to resolve it.
+   * Waits and retries once on HTTP 429. Only for calls that move no money: a
+   * 429 was rejected before processing, so re-issuing a prepare is harmless,
+   * but a submit must be resolved through `status`, never retried.
    */
   async withRetry<T>(operation: () => Promise<T>): Promise<T> {
     try {

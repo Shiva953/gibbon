@@ -17,9 +17,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Amounts are decimal strings on purpose. YAML would happily parse `40.00`
- * into the float 40, and float rounding has no place anywhere near an escrow
- * amount, so we require the string form and say so clearly.
+ * Amounts are decimal strings on purpose: YAML parses `40.00` into the float
+ * 40, and float rounding has no place near an escrow amount.
  */
 function requireDecimalString(value: unknown, field: string, index: number): string {
   if (typeof value === 'number') {
@@ -56,8 +55,8 @@ function parseEntry(raw: unknown, index: number): BountyEntry {
     throw new BountyFileError(`Entry #${index + 1}: \`tags\` must be a list of strings.`);
   }
 
-  // Field order matches the file, so the first problem reported is the first
-  // one a reader would look for.
+  // Field order matches the file, so the first error reported is the first one
+  // a reader would look for.
   const entry: BountyEntry = {
     id: requireString(raw['id'], 'id', index),
     title: requireString(raw['title'], 'title', index),
@@ -93,7 +92,7 @@ function parseEntry(raw: unknown, index: number): BountyEntry {
   return entry;
 }
 
-/** Parses and validates bounties.yaml. An absent file is an error worth saying out loud. */
+/** Parses and validates bounties.yaml. */
 export function loadBounties(path: string): BountyEntry[] {
   const absolute = resolve(path);
   let raw: string;
@@ -112,7 +111,7 @@ export function loadBounties(path: string): BountyEntry[] {
   return parseBounties(raw, absolute);
 }
 
-/** The pure half of loadBounties, so it can be unit tested without the disk. */
+/** The pure half of loadBounties, testable without the disk. */
 export function parseBounties(raw: string, label = 'bounties.yaml'): BountyEntry[] {
   let parsed: unknown;
   try {

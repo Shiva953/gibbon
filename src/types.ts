@@ -1,22 +1,16 @@
 /**
- * Core types for gibwork-sync.
- *
- * A note that drives most of the design below: the Gibwork SDK's
- * `UpdateTaskInput` accepts ONLY `content`, `allowOnlyVerifiedSubmissions`,
- * and `deadline`. Title, tags, and the reward amount are immutable once a
- * task is live. The diff engine therefore has to distinguish "changed and
- * updatable" from "changed but impossible to apply" — see `BlockedChange`.
+ * Core types. The constraint that drives most of the design: `UpdateTaskInput`
+ * accepts only `content`, `allowOnlyVerifiedSubmissions` and `deadline` —
+ * title, tags and amount are immutable once a task is live. So the diff engine
+ * must tell "changed and updatable" from "changed but impossible to apply".
  */
 
 /** Mainnet USDC. Used when an entry does not name its own mint. */
 export const DEFAULT_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 /**
- * The reward range Gibwork accepts, verified against the stage API:
- * "payment.amount must be between 1.00 and 100000.00 inclusive" (HTTP 400).
- *
- * Checked at parse time so an out-of-range amount fails as a usage error
- * before any network call, rather than as an API error one round trip later.
+ * The reward range Gibwork accepts, per the stage API's own 400. Checked at
+ * parse time so an out-of-range amount fails before any network call.
  */
 export const MIN_BOUNTY_AMOUNT = 1;
 export const MAX_BOUNTY_AMOUNT = 100_000;
@@ -36,10 +30,9 @@ export type ImmutableField = (typeof IMMUTABLE_FIELDS)[number];
 /**
  * One entry in bounties.yaml.
  *
- * `id` is a stable, human-chosen key — NOT the Gibwork task UUID. It is what
- * lets gibwork-sync match a line in this file to a real task across runs, via
- * the local id -> taskId mapping in .gibwork/state.json. Never change an
- * existing entry's `id` once it has been applied: the tool would read that as
+ * `id` is a stable, human-chosen key — NOT the Gibwork UUID — and is what
+ * matches a line in this file to a real task across runs, via the id -> taskId
+ * mapping in .gibwork/state.json. Changing an applied entry's `id` reads as
  * "refund the old one, create a new one".
  */
 export interface BountyEntry {
@@ -67,11 +60,9 @@ export type Environment = 'stage' | 'production';
 /**
  * An apply operation that started but has not been confirmed finished.
  *
- * This is the heart of the interrupted-transaction protection: `apply` writes
- * one of these BEFORE it starts a signed operation and only clears it once the
- * operation reaches a confirmed terminal state. Anything left behind means the
- * process died mid-flight, and `status` will refuse to let `apply` run again
- * over that entry until a human resolves it.
+ * The heart of the interrupted-transaction protection: `apply` writes one
+ * BEFORE any signed operation and clears it only on a confirmed terminal
+ * state. Anything left behind blocks the next `apply` until `status` resolves it.
  */
 export interface PendingOperation {
   /** The bounties.yaml `id` this operation was for. */
@@ -112,11 +103,7 @@ export interface SyncState {
   pending: PendingOperation[];
 }
 
-/**
- * A BountyEntry with every optional field resolved to its effective value.
- * Defaults are applied exactly once, here, so hashing, diffing, and creating
- * all agree on what the entry actually means.
- */
+/** A BountyEntry with every optional field resolved to its effective value. */
 export interface ResolvedEntry extends BountyEntry {
   mint: string;
   minSubmission: string;
@@ -124,10 +111,8 @@ export interface ResolvedEntry extends BountyEntry {
 
 /**
  * The live view of one task, narrowed to the fields the diff cares about and
- * normalized into the same representation the YAML uses.
- *
- * Deliberately not the SDK's `TaskDetails`: keeping the diff engine on a plain
- * shape is what lets it stay a pure function with no SDK import.
+ * normalized into the representation the YAML uses. Deliberately not the SDK's
+ * `TaskDetails`, so the diff engine stays pure with no SDK import.
  */
 export interface LiveTask {
   taskId: string;

@@ -9,16 +9,10 @@ import type { RuntimeFactory } from './runtime.js';
 export const DEFAULT_FILE = 'bounties.yaml';
 
 /**
- * Registers the four sync verbs onto any commander command.
- *
- * This is the portable unit. It knows nothing about how credentials were
- * resolved or how global flags are spelled — only how to get a Runtime.
- *
- *   standalone:  registerSync(program, () => createRuntime(readGlobals()))
- *   embedded:    registerSync(new Command('sync'), createRuntime)
- *
- * so the same file serves `gibwork-sync plan` and a hypothetical
- * `gibwork sync plan` without edits.
+ * Registers the sync verbs onto any commander command. The portable unit: it
+ * knows only how to get a Runtime, not how credentials or global flags were
+ * resolved, so the same file serves `gibwork-sync plan` and a hypothetical
+ * `gibwork sync plan` unchanged.
  */
 export function registerSync(parent: Command, getRuntime: RuntimeFactory): Command {
   parent
@@ -47,10 +41,8 @@ export function registerSync(parent: Command, getRuntime: RuntimeFactory): Comma
       await importCommand(await getRuntime(), { file: opts.file, force: opts.force });
     });
 
-  /* The one verb that needs no wallet: it reads local files, calls Claude, and
-     writes a file. Registered without getRuntime so it never resolves Solana
-     credentials — an agent editing the file should not be able to reach the
-     platform at all. */
+  /* Registered without getRuntime, so it never resolves Solana credentials —
+     an agent editing the file must not be able to reach the platform. */
   parent
     .command('agent')
     .description('Rewrite bounties.yaml from a natural-language request (never applies it)')

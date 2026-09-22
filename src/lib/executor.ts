@@ -10,14 +10,11 @@ export interface ExecutorDeps {
   client: GibworkClient;
   signer: WalletSigner;
   pacer: Pacer;
-  /** Persist state. Separated from the logic so tests can observe every write. */
+  /** Separated from the logic so tests can observe every write. */
   save: (state: SyncState) => void;
-  /**
-   * Transaction signing. Injectable so tests can assert the ordering that makes
-   * this safe — that the pending marker reaches disk BEFORE a signature exists.
-   */
+  /** Injectable so tests can assert the marker reaches disk before a signature exists. */
   sign?: (serializedTransaction: string, signer: WalletSigner) => Promise<string>;
-  /** Cancellation. Aborting before a submit is safe; after it, `status` recovers. */
+  /** Aborting before a submit is safe; after it, `status` recovers. */
   signal?: AbortSignal;
   log?: (message: string) => void;
 }
@@ -62,18 +59,14 @@ export function toUpdateInput(planned: PlannedUpdate): UpdateTaskInput {
 }
 
 /**
- * Update: one HTTP call, no transaction, no funds.
- *
- * Deliberately has no pending marker. `tasks.update` signs nothing, so a failed
- * or interrupted update is safe to simply run again on the next apply — there
- * is no ambiguous middle state to protect against.
+ * Update: one HTTP call, no transaction, no funds. Deliberately has no pending
+ * marker — nothing is signed, so an interrupted update is safe to run again.
  */
 export async function execUpdate(
   deps: ExecutorDeps,
   state: SyncState,
   planned: PlannedUpdate,
 ): Promise<ExecResult> {
-  // Safe to retry: update signs nothing, so a 429 costs only time.
   await deps.pacer.withRetry(() =>
     deps.client.tasks.update(planned.taskId, toUpdateInput(planned), req(deps)),
   );
@@ -87,24 +80,23 @@ export async function execUpdate(
 /**
  * Create: prepare -> persist -> sign -> submit -> settle.
  *
- * The ordering is the entire point. `prepareCreate` hands back the taskId
- * before any funds move, and we write that to disk BEFORE a signature exists.
- * `CreateTaskInput` carries no idempotency key, so without that marker a
- * process killed after submit would leave a funded bounty whose UUID exists
- * nowhere locally, and the next run would happily fund a second one.
+ * The ordering is the entire point. `prepareCreate` returns the taskId before
+ * any funds move, and it reaches disk BEFORE a signature exists. There is no
+ * idempotency key, so without that marker a process killed after submit leaves
+ * a funded bounty recorded nowhere, and the next run funds a second one.
  */
 export async function execCreate(
   deps: ExecutorDeps,
   state: SyncState,
   entry: BountyEntry,
 ): Promise<ExecResult> {
-  // (1) PREPARE — no funds move. Yields taskId + intentId.
+  // PREPARE — no funds move. Yields taskId + intentId.
   await deps.pacer.prepare();
   const prepared = await deps.pacer.withRetry(() =>
     deps.client.tasks.prepareCreate(toCreateInput(entry), req(deps)),
   );
 
-  // (2) BARRIER — reach the disk before a signature exists anywhere.
+  // BARRIER — reach the disk before a signature exists anywhere.
   const marker = {
     id: entry.id,
     kind: 'create' as const,
@@ -115,18 +107,18 @@ export async function execCreate(
   let next = markPending(state, marker);
   deps.save(next);
 
-  // (3) SIGN — local only, no network.
+  // SIGN — local only, no network.
   const sign = deps.sign ?? signPreparedTransaction;
   const signedTransaction = await sign(prepared.serializedTransaction, deps.signer);
 
-  // (4) SUBMIT — funds move here.
+  // SUBMIT — funds move here.
   await deps.pacer.submit();
   let result;
   try {
     result = await deps.client.tasks.submitCreate(prepared.intentId, signedTransaction, req(deps));
   } catch (error) {
-    // Ambiguous means we genuinely do not know whether it landed. Keep the
-    // marker and surface it; never retry, that is how duplicates happen.
+    // Ambiguous means we do not know whether it landed: keep the marker and
+    // surface it. Never retry — that is how duplicates happen.
     const lastKnownStatus =
       error instanceof GibworkAmbiguousSubmitError ? 'ambiguous' : 'submit-failed';
     next = markPending(next, {
@@ -138,7 +130,7 @@ export async function execCreate(
     throw error;
   }
 
-  // (5) SETTLE — 'processing' is not success.
+  // SETTLE — 'processing' is not success.
   if (result.status === 'confirmed') {
     next = recordTask(next, entry.id, prepared.taskId, entry);
     next = clearPending(next, entry.id, 'create');
@@ -159,7 +151,7 @@ export async function execCreate(
 
 /**
  * Refund: the same five steps as create, through prepareRefund/submitRefund.
- * Funds move out of escrow here, so it gets identical crash protection.
+ * Funds move out of escrow, so it gets identical crash protection.
  */
 export async function execRefund(
   deps: ExecutorDeps,

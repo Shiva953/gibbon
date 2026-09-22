@@ -5,10 +5,8 @@ import { clearPending, forgetTask, recordTask } from './state.js';
 
 /**
  * What reading the live task told us about an interrupted operation.
- *
- * `in-flight` is the only verdict that keeps the marker. Everything else is a
- * settled fact — either it landed or it did not — and clearing the marker is
- * what unblocks the next apply.
+ * `in-flight` is the only verdict that keeps the marker; every other one is
+ * settled, and clearing the marker is what unblocks the next apply.
  */
 export type Verdict = 'never-landed' | 'in-flight' | 'succeeded' | 'rolled-back';
 
@@ -21,9 +19,9 @@ export interface Resolution {
 }
 
 /**
- * `tasks.get` has no `getIntent` counterpart — the SDK exposes intent reads for
- * submissions only. Reading the task back IS the reconciliation, and it works
- * because `prepareCreate` handed us the taskId before any funds moved.
+ * The SDK exposes intent reads for submissions only, so reading the task back
+ * IS the reconciliation — which works because `prepareCreate` handed us the
+ * taskId before any funds moved.
  */
 function isNotFound(error: unknown): boolean {
   return error instanceof GibworkApiError && error.status === 404;
@@ -42,8 +40,7 @@ export async function resolveOperation(
   entry?: BountyEntry,
   signal?: AbortSignal,
 ): Promise<{ state: SyncState; resolution: Resolution }> {
-  // A marker with no taskId predates the barrier, or prepare itself failed.
-  // Nothing was ever allocated, so nothing can have landed.
+  // No taskId means prepare never returned, so nothing can have landed.
   if (!op.taskId) {
     return {
       state: clearPending(state, op.id, op.kind),
@@ -85,8 +82,8 @@ export async function resolveOperation(
     };
   }
 
-  // Funding transaction has not confirmed. This is the one case that must keep
-  // blocking: retrying now could fund the same bounty twice.
+  // Funding has not confirmed. The one case that must keep blocking:
+  // retrying now could fund the same bounty twice.
   if (statusIs(details, 'creating')) {
     return {
       state,

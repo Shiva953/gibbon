@@ -21,14 +21,10 @@ const SYMBOL: Record<Resolution['verdict'], string> = {
 };
 
 /**
- * The reconciliation watchdog.
- *
- * Reads back every operation a previous `apply` started but never confirmed,
- * and settles the local record against what Gibwork actually shows. It only
- * ever READS from the API — no transaction is signed and no funds move — but it
- * does rewrite .gibwork/state.json, which is what unblocks `apply`.
- *
- * Exits 3 while anything is still in flight, so CI can gate on it.
+ * The reconciliation watchdog: reads back every operation a previous `apply`
+ * started but never confirmed, and settles the local record against what
+ * Gibwork shows. Only ever READS from the API, but rewrites
+ * .gibwork/state.json — which is what unblocks `apply`.
  */
 export async function statusCommand(runtime: Runtime, options: StatusOptions): Promise<void> {
   const { client, walletAddress, environment, credentialSource, signal, output } = runtime;
@@ -47,8 +43,7 @@ export async function statusCommand(runtime: Runtime, options: StatusOptions): P
     return;
   }
 
-  // The file is only needed to hash an adopted task. A missing or edited file
-  // must never stop recovery — that would be the worst possible time to fail.
+  // Only needed to hash an adopted task; a missing file must never stop recovery.
   let entriesById = new Map<string, BountyEntry>();
   try {
     entriesById = new Map(loadBounties(options.file).map((entry) => [entry.id, entry]));

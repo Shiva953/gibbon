@@ -10,11 +10,9 @@ import type { Environment } from './types.js';
 /**
  * Everything a sync command needs in order to talk to Gibwork.
  *
- * The field names mirror @gibwork/cli's own `createRuntime()` return value
- * deliberately. gibwork-sync ships as its own binary and claims no part of the
- * official CLI's command namespace — but if the Gibwork team ever wanted to
- * absorb this work, matching this shape means the sync commands drop in
- * against their runtime unchanged, and this file is the only thing deleted.
+ * The field names mirror @gibwork/cli's own `createRuntime()` return value, so
+ * the commands would drop into their runtime unchanged if this work were ever
+ * upstreamed — this file being the only thing deleted.
  */
 export interface Runtime {
   client: GibworkClient;
@@ -42,10 +40,7 @@ export interface RuntimeOptions {
   signal?: AbortSignal;
 }
 
-/**
- * Produces a Runtime. The host owns this: standalone gibwork-sync uses the
- * implementation below, while an embedding CLI would supply its own.
- */
+/** The host owns this: standalone uses the implementation below, an embedding CLI its own. */
 export type RuntimeFactory = () => Promise<Runtime>;
 
 const MAX_TIMEOUT_MS = 10 * 60 * 1000;
@@ -74,11 +69,8 @@ function resolveTimeout(value: number | string | undefined): number | undefined 
 }
 
 /**
- * The standalone implementation.
- *
- * Resolution is flag -> environment variable -> profile -> default for every
- * setting, exactly as the official CLI resolves them, so a wallet configured
- * with `gibwork config set` works here with no extra setup.
+ * The standalone implementation. Every setting resolves flag -> env -> profile
+ * -> default, exactly as the official CLI does.
  */
 export async function createRuntime(options: RuntimeOptions = {}): Promise<Runtime> {
   const config = await loadConfig();

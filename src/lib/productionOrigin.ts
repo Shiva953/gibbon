@@ -16,11 +16,9 @@ function assertOfficialOrigin(url: URL, direction: 'request' | 'response'): void
 }
 
 /**
- * Refuses to point a production wallet anywhere but the official API.
- *
- * Without this, exposing --api-url would hand anyone a way to route a
- * production signing wallet at an endpoint they control. Stage is left
- * configurable on purpose; production is not.
+ * Refuses to point a production wallet anywhere but the official API —
+ * otherwise --api-url would route a production signing wallet at an endpoint
+ * the caller controls. Stage stays configurable on purpose.
  */
 export function assertProductionApiOrigin(environment: Environment, apiUrl: string): void {
   if (environment !== 'production') return;
@@ -44,9 +42,9 @@ export function assertProductionApiOrigin(environment: Environment, apiUrl: stri
 type FetchArgs = Parameters<typeof fetch>;
 
 /**
- * A fetch that re-checks the origin on the way out AND on the way back, and
- * refuses redirects. A redirect to another host would otherwise carry the
- * wallet-signed auth headers off the official origin.
+ * Re-checks the origin on the way out and on the way back, and refuses
+ * redirects — a redirect would carry wallet-signed auth headers off the
+ * official origin.
  */
 async function pinnedFetch(input: FetchArgs[0], init?: FetchArgs[1]): Promise<Response> {
   const requestUrl =
@@ -63,11 +61,7 @@ async function pinnedFetch(input: FetchArgs[0], init?: FetchArgs[1]): Promise<Re
   return response;
 }
 
-/**
- * Bun's ambient `typeof fetch` declares a `preconnect` helper that Node's does
- * not. The SDK only ever calls the function itself, so widening here is safe
- * and keeps the shim free of runtime-specific shims.
- */
+/** Bun's ambient `typeof fetch` declares a `preconnect` helper Node's does not. */
 export const pinnedProductionFetch = pinnedFetch as unknown as FetchImplementation;
 
 /** Validates an API URL before it reaches the SDK. */

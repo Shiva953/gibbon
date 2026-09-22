@@ -22,7 +22,7 @@ const AgentResult = z.object({
       detail: z.string(),
     }),
   ),
-  /** Requests that cannot be satisfied, and why. This is the point. */
+  /** Requests that cannot be satisfied, and why. */
   refused: z.array(z.object({ request: z.string(), reason: z.string() })),
   /** Anything the model had to assume because the prompt did not say. */
   assumptions: z.array(z.string()),
@@ -69,25 +69,15 @@ export interface EditRequest {
   prompt: string;
   currentYaml: string;
   entries: BountyEntry[];
-  /** ids that exist on Gibwork right now — these carry the immutability rules. */
+  /** ids that exist on Gibwork right now, so the immutability rules apply. */
   liveIds: string[];
   model?: string;
 }
 
 /**
- * Asks Claude to rewrite bounties.yaml.
- *
- * The result is never trusted: the caller re-parses it with the project's own
- * loader before writing, and `gibwork-sync plan` checks it against live state
- * afterwards. The model produces a reviewable file, not an action.
- */
-/**
- * Fails before the request when no credential source exists.
- *
- * The SDK resolves ANTHROPIC_API_KEY, then ANTHROPIC_AUTH_TOKEN, then an
- * `ant auth login` profile on disk. When none is present it throws a plain
- * Error whose message is about internal resolution — useless to a user — so
- * this checks the same sources first and says what to actually do.
+ * Fails before the request when no credential source exists. The SDK's own
+ * error for this is about internal resolution and useless to a user, so check
+ * the same sources first and say what to actually do.
  */
 export function assertAnthropicCredentials(): void {
   if (process.env.ANTHROPIC_API_KEY?.trim()) return;
@@ -108,6 +98,11 @@ export function assertAnthropicCredentials(): void {
   );
 }
 
+/**
+ * Asks Claude to rewrite bounties.yaml. The result is never trusted: the
+ * caller re-parses it with our own loader, and `plan` checks it against live
+ * state afterwards. The model produces a reviewable file, not an action.
+ */
 export async function requestEdit(request: EditRequest): Promise<AgentResult> {
   assertAnthropicCredentials();
   const client = new Anthropic();

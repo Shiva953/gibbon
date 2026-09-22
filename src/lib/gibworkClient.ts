@@ -10,17 +10,15 @@ import { CliError, EXIT } from './errors.js';
 import { pinnedProductionFetch } from './productionOrigin.js';
 
 /**
- * Credential resolution, matching @gibwork/cli's rules and safety posture.
- *
- * Priority, with ambiguity treated as an error rather than a silent winner:
- *   1. --keypair <path>            (mutually exclusive with --private-key-stdin)
+ * Credential resolution, matching @gibwork/cli. Ambiguity is an error rather
+ * than a silent winner:
+ *   1. --keypair <path>            (exclusive with --private-key-stdin)
  *   2. --private-key-stdin         (piped only; never prompts, never echoes)
  *   3. GIBWORK_KEYPAIR_PATH        (error if GIBWORK_PRIVATE_KEY is also set)
  *   4. GIBWORK_PRIVATE_KEY
  *   5. the selected profile's keypair-path
  *
- * Two things this deliberately never does: accept a raw private key as a bare
- * CLI argument (shell history and `ps` expose it), and load .env implicitly.
+ * Never accepts a raw key as a CLI argument, and never loads .env implicitly.
  */
 
 export const MAX_KEY_BYTES = 16 * 1024;
@@ -47,11 +45,9 @@ export interface ResolvedCredential {
 }
 
 /**
- * Loads a keypair file with the checks the official CLI performs.
- *
- * realpath defeats symlink redirection, the mode check refuses a key any other
- * user can read, and the size bound stops a mistyped path from pulling a large
- * file into memory as "a key".
+ * Loads a keypair file with the checks the official CLI performs: realpath
+ * defeats symlink redirection, the mode check refuses a world-readable key,
+ * and the size bound stops a mistyped path being read in as "a key".
  */
 async function loadKeypairFile(pathValue: string): Promise<{ path: string; contents: Buffer }> {
   const requested = resolve(expandHome(pathValue.trim()));
@@ -133,7 +129,7 @@ export async function resolveCredential(
     const environmentPath = process.env.GIBWORK_KEYPAIR_PATH?.trim();
     const environmentKey = process.env.GIBWORK_PRIVATE_KEY?.trim();
 
-    // Ambiguity about which wallet signs must never resolve silently.
+    // Which wallet signs must never be decided silently.
     if (environmentPath && environmentKey) {
       throw new CredentialError(
         'Both GIBWORK_KEYPAIR_PATH and GIBWORK_PRIVATE_KEY are set; keep only one.',
@@ -148,7 +144,7 @@ export async function resolveCredential(
     } else if (environmentKey) {
       privateKey = environmentKey;
       source = 'GIBWORK_PRIVATE_KEY';
-      // Drop it from the environment so nothing spawned later inherits the key.
+      // So nothing spawned later inherits the key.
       delete process.env.GIBWORK_PRIVATE_KEY;
     } else if (profile.keypairPath) {
       const loaded = await loadKeypairFile(profile.keypairPath);
@@ -195,9 +191,8 @@ export interface ClientOptions {
 
 /**
  * Builds the SDK client. The environment is client-wide and immutable, so
- * prepare and submit for one operation can never straddle stage and production.
- * Production additionally gets the pinned fetch, which refuses redirects and
- * any non-official origin.
+ * prepare and submit can never straddle stage and production. Production also
+ * gets the pinned fetch, which refuses redirects and non-official origins.
  */
 export function buildClient(options: ClientOptions): GibworkClient {
   return new GibworkClient({

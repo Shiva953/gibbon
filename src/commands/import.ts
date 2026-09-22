@@ -38,12 +38,9 @@ function uniqueId(base: string, taken: Set<string>): string {
 }
 
 /**
- * Builds a file entry that round-trips to zero drift.
- *
- * Only fields the diff actually compares are written. `deadline` is
- * deliberately omitted: Gibwork assigns one at creation, and an omitted
- * optional field is unmanaged — writing it would make a server-side value
- * something the file has to keep chasing.
+ * Builds a file entry that round-trips to zero drift. Only fields the diff
+ * compares are written; `deadline` is omitted because Gibwork assigns one at
+ * creation and an omitted optional field is unmanaged.
  */
 export function toEntry(id: string, details: TaskDetails, live: LiveTask): BountyEntry {
   const entry: BountyEntry = {
@@ -68,23 +65,18 @@ function fileHasContent(path: string): boolean {
   try {
     return parseBounties(readFileSync(absolute, 'utf8'), path).length > 0;
   } catch {
-    // Unparseable but present: still refuse to clobber it silently.
-    return true;
+    return true; // unparseable but present: still refuse to clobber it
   }
 }
 
 /**
  * Generates bounties.yaml and .gibwork/state.json from this wallet's live
- * tasks, so an existing Gibwork creator can adopt gibwork-sync without
- * hand-transcribing anything.
+ * tasks, so an existing creator can adopt gibwork-sync without a hand-written
+ * file — which would otherwise plan `+ create` over bounties that already
+ * exist and fund duplicates.
  *
- * Without this, a maintainer who writes a file describing bounties they
- * already have gets an empty state map, a plan full of `+ create`, and
- * duplicate funded bounties. That is the failure this command exists to stop.
- *
- * It self-checks before writing: the generated file is diffed against the live
- * state it came from, and anything other than a no-op is reported rather than
- * written, because a lossy import is worse than none.
+ * Self-checking: the generated file is diffed against the live state it came
+ * from, and anything but a no-op is reported rather than written.
  */
 export async function importCommand(runtime: Runtime, options: ImportOptions): Promise<void> {
   const { client, walletAddress, environment, signal, output } = runtime;
@@ -140,8 +132,7 @@ export async function importCommand(runtime: Runtime, options: ImportOptions): P
     }
   }
 
-  // The acceptance gate: what we are about to write must already agree with
-  // what is live, or the import is lossy and must not be trusted.
+  // What we write must already agree with live state, or the import is lossy.
   const check = computePlan({ desired: entries, live, state });
   if (!isNoOp(check) || check.blocked.length > 0) {
     throw new CliError(

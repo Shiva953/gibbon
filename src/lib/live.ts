@@ -27,14 +27,12 @@ export async function listAllSummaries(
 /**
  * Builds the live half of the diff.
  *
- * `tasks.list()` returns summaries with no `content` and no `tags`, so a real
- * content diff needs one `tasks.get()` per task. We only fan out for tasks this
- * wallet's state file actually tracks: untracked live tasks are ignored by the
- * diff entirely, so fetching them would be requests spent on data we discard.
+ * `tasks.list()` omits `content` and `tags`, so a real diff needs one
+ * `tasks.get()` per task — and only for tasks the state file tracks, since the
+ * diff ignores the rest anyway.
  *
- * A tracked task that 404s is simply omitted. The diff then sees a mapping with
- * no live counterpart and blocks it, which is the correct, human-in-the-loop
- * outcome — never a silent recreate.
+ * A tracked task that 404s is omitted, leaving the diff to block a mapping
+ * with no live counterpart rather than silently recreate it.
  */
 export async function fetchLiveTasks(
   client: GibworkClient,

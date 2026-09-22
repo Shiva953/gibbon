@@ -5,12 +5,9 @@ import type { Environment } from '../types.js';
 import { CliError, EXIT } from './errors.js';
 
 /**
- * Reads the same configuration file @gibwork/cli writes.
- *
- * This is what "in sync" concretely means: a user who has already run
- * `gibwork config set keypair-path ...` gets those profiles working here
- * with no extra setup. The file is owned by the official CLI — gibwork-sync
- * only ever reads it.
+ * Reads the same configuration file @gibwork/cli writes, so profiles set with
+ * `gibwork config set` work here with no extra setup. Read-only: the file is
+ * owned by the official CLI.
  */
 
 export interface Profile {
@@ -38,7 +35,7 @@ export function defaultConfig(): GibworkConfig {
   return { version: 1, defaultProfile: 'default', profiles: {} };
 }
 
-/** Platform-aware, matching the official CLI's resolution exactly. */
+/** Matches the official CLI's platform-specific resolution exactly. */
 export function configFilePath(): string {
   const override = process.env.GIBWORK_CONFIG_FILE?.trim();
   if (override) return resolve(expandHome(override));

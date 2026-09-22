@@ -41,10 +41,9 @@ program
       'to reconcile it with the live platform.',
   )
   .version(VERSION)
-  /* Global options are spelled exactly as @gibwork/cli spells them, and resolve
-     flag -> environment variable -> profile -> default, so a wallet configured
-     with `gibwork config set` works here untouched. A raw private key is never
-     accepted as an argument: shell history and `ps` expose it. */
+  /* Spelled exactly as @gibwork/cli spells them, and resolved flag -> env ->
+     profile -> default, so a wallet configured with `gibwork config set` works
+     here untouched. A raw private key is never accepted as an argument. */
   .option('--profile <name>', 'configuration profile')
   .option('--environment <environment>', 'Gibwork API environment', parseEnvironment)
   .option('--api-url <url>', 'override the Gibwork SDK API URL')
@@ -55,14 +54,12 @@ program
   .option('--quiet', 'suppress progress messages')
   .option('--no-color', 'disable color output')
   .option('--allow-insecure-http', 'allow a non-loopback API URL to use plain HTTP')
-  /* Standalone shorthands the official CLI does not define. They would be
-     dropped if these commands were ever upstreamed. */
+  /* Shorthands the official CLI does not define. */
   .option('-e, --env <environment>', 'alias for --environment', parseEnvironment)
   .option('-k, --keypair-file <path>', 'alias for --keypair');
 
 /* Ctrl-C aborts in-flight work rather than killing the process mid-operation.
-   State is written with temp-file + rename before anything is signed, so an
-   abort is always recoverable with `gibwork-sync status`. */
+   State is written before anything is signed, so an abort is recoverable. */
 const controller = new AbortController();
 let cancelling = false;
 process.on('SIGINT', () => {
@@ -73,8 +70,8 @@ process.on('SIGINT', () => {
 });
 
 /* Must precede registerSync: commander copies _exitCallback into subcommands
-   when they are created, so overriding afterwards would leave them calling
-   process.exit() directly and reporting the wrong code. */
+   as they are created, so overriding later would leave them calling
+   process.exit() directly with the wrong code. */
 program.exitOverride();
 
 registerSync(program, async () => {
@@ -96,16 +93,13 @@ registerSync(program, async () => {
   });
 });
 
-/**
- * One place to turn a thrown value into the exit code @gibwork/cli would use
- * for the same failure, so a CI script can treat both tools identically.
- */
+/** Turns any thrown value into the exit code @gibwork/cli uses for it. */
 async function main(): Promise<void> {
   try {
     await program.parseAsync(process.argv);
   } catch (error) {
     if (error instanceof CommanderError) {
-      // --help and --version report success; everything else is a usage error.
+      // --help and --version succeed; everything else is a usage error.
       process.exitCode = error.exitCode === 0 ? EXIT.OK : EXIT.USAGE;
       return;
     }

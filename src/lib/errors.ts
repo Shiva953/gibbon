@@ -8,16 +8,11 @@ import {
 } from '@gibwork/sdk';
 
 /**
- * Exit codes, matching @gibwork/cli exactly.
+ * Exit codes. 0-29 are reproduced from @gibwork/cli's table and must not be
+ * redefined, so a CI script reads the same code from either tool.
  *
- * Aligning these is not cosmetic: a CI script that tests for a specific code
- * must mean the same thing whichever tool produced it. 0-29 are reproduced
- * from the official CLI's table and must not be redefined here.
- *
- * The 30s are ours. The CLI already uses 30 for a non-error "not ready"
- * verdict (`gibwork mcp doctor`), and that is exactly what BLOCKED and
- * UNRESOLVED are — the run succeeded, but live state is not what the file
- * asked for. They are deliberately NOT errors.
+ * The 30s are ours, and are deliberately NOT errors: the run succeeded, but
+ * live state is not what the file asked for.
  */
 export const EXIT = {
   OK: 0,
@@ -65,10 +60,9 @@ export interface NormalizedError {
 /**
  * Maps any thrown value onto the official code/exit pair.
  *
- * Order matters: GibworkAmbiguousSubmitError and GibworkTimeoutError both
- * extend GibworkNetworkError, so the specific cases have to be tested first
- * or an ambiguous submit would be reported as a plain network failure — and
- * "retry" is exactly the wrong advice for one of those.
+ * Order matters: ambiguous-submit and timeout both extend GibworkNetworkError,
+ * and reporting an ambiguous submit as a network failure would advise a retry,
+ * which is exactly wrong.
  */
 export function normalizeError(error: unknown): NormalizedError {
   if (error instanceof CliError) {
