@@ -1,9 +1,16 @@
 # gibwork-sync
 
-Manage your Gibwork bounties as a file instead of as a list of commands.
+**For open source projects and protocols that want to fund their issue backlog
+on Gibwork.**
 
-You write down the bounties you want in `bounties.yaml`. You run one command to
-see what would change. You run a second command to make it happen.
+If your core is open source, you probably have a list of issues you would pay
+to get fixed. Turning that list into funded bounties, keeping it current as
+issues get resolved, and doing it with more than one maintainer involved is the
+job this tool is for.
+
+You keep the bounties you want funded in a `bounties.yaml` file next to your
+code. You run one command to see what would change on Gibwork. You run a second
+command to make it happen.
 
 ```bash
 $ gibwork-sync plan --profile stage
@@ -61,6 +68,11 @@ platform will not stop you.
 
 gibwork-sync fixes 2, 3 and 4 by making the bounty list a file in git, and by
 never letting anything except a reviewed diff move money.
+
+If your reaction is *"Gibwork already has an AI agent that can do all this"*,
+that is the right question to ask. There is
+[a whole section on it below](#but-gibwork-already-has-an-ai-agent-for-this)
+with four things you can try for yourself.
 
 ---
 
@@ -355,6 +367,144 @@ No changes. bounties.yaml matches live Gibwork state.
 
 A command is an instruction, so it runs every time. A file is a description of
 how things should be, so running it twice is the same as running it once.
+
+---
+
+## But Gibwork already has an AI agent for this
+
+It does, and for a single bounty it is better than this. `gibwork skills
+install claude` lets you say "create a bounty for the parser leak at 1 USDC"
+and it happens. It finds UUIDs by title, loops over ten operations, and writes
+the flags for you. Anything this tool claimed about saving keystrokes would be
+nonsense.
+
+Here are four situations where it is not about keystrokes. Every one of these
+is something you can run yourself.
+
+### 1. Doing the same thing twice
+
+**Monday.** You tell the agent: *create a bounty for the parser memory leak, 1
+USDC, tags bug and rust.* It does.
+
+**Friday.** You forget, and ask for the same thing again.
+
+```
+$ gibwork task list --profile stage
+bb24ca91  in progress  Fix memory leak in parser
+ea07dd2a  in progress  Fix memory leak in parser
+```
+
+Two bounties, 2 USDC locked, no warning.
+
+With the file:
+
+```bash
+$ gibwork-sync apply --profile stage
+  created parser-leak -> bb24ca91-1b4f-4d91-8fa3-fed2501972f4
+Applied: 1 created, 0 updated, 0 refunded.
+
+$ gibwork-sync apply --profile stage
+    1 unchanged
+No changes. bounties.yaml matches live Gibwork state.
+```
+
+This one takes sixty seconds and 2 USDC to check for yourself. It is the
+clearest of the four.
+
+### 2. Asking whether anything changed without you
+
+Someone on your team opens the Gibwork mobile app and edits a bounty
+description.
+
+**With the agent:** it can run `task list` and read you the current
+description. It cannot tell you it changed, because nothing on your machine
+records what the description was supposed to say.
+
+**With the file:**
+
+```bash
+$ gibwork-sync plan --profile stage
+
+  ~ update   docs-cli         content  (7b2e1f04)
+
+Plan: 0 to create, 1 to update, 0 to refund.
+```
+
+Free, read-only, two seconds. And `git log -p bounties.yaml` tells you it was
+last changed three weeks ago, by whom, in which commit, and why.
+
+### 3. Raising a reward
+
+*Raise the parser bounty to 5 USDC.*
+
+Gibwork does not allow this. A live bounty's amount is permanent. The agent
+either fails partway or improvises a refund and a recreate, which is two
+transactions you did not ask for.
+
+```bash
+$ gibwork task update bb24ca91-1b4f-4d91-8fa3-fed2501972f4 --profile stage --amount 5.00
+error: unknown option '--amount'
+```
+
+With the file, change `amount: "1.00"` to `"5.00"`:
+
+```bash
+$ gibwork-sync plan --profile stage
+
+  ! blocked  parser-leak      (bb24ca91)
+             amount cannot be changed on a live bounty. Refund this bounty and
+             create a replacement, or revert the file.
+
+Plan: 0 to create, 0 to update, 0 to refund, 1 blocked.
+```
+
+Exit code 30. No request reached Gibwork. It names the constraint, gives you
+the options, and does not pick one for you.
+
+### 4. The session dying halfway through
+
+Your laptop sleeps while a bounty is being created.
+
+**With the agent:** it was mid tool call. Nothing recorded the UUID, so you
+cannot tell whether the USDC moved. Ask it to try again and you fund a second
+bounty.
+
+**With the file.** This is a real transcript from testing, where `kill -9`
+landed *after* the payment went through:
+
+```bash
+$ cat .gibwork/state.json
+"pending": [{
+  "id": "probe-c",
+  "taskId": "ea07dd2a-c115-4f4b-9fe3-8ae4ece43a38",
+  "startedAt": "2026-09-21T06:27:45.394Z"
+}]
+
+$ gibwork-sync apply --profile stage
+apply refused: resolve the operations above first.        # exit 31
+
+$ gibwork-sync status --profile stage
+  v create  probe-c   task exists (status: CREATED). Adopted into state.
+All clear.
+
+$ gibwork task list --profile stage
+ea07dd2a  in progress  gibwork-sync probe C               # exactly one
+```
+
+The money had already moved when the process died. The tool found out by
+asking, instead of guessing.
+
+### So when is each one right?
+
+Use the **Gibwork app or the agent skill** when you are posting a bounty now,
+it needs images or rich formatting, or you post one every few weeks.
+
+Use **gibwork-sync** when the same set of bounties exists over months, when
+more than one person changes it, when a mistake costs money, or when it has to
+run unattended in CI.
+
+The line is not agent versus file. It is one-off versus ongoing. Most projects
+will use both.
 
 ---
 
