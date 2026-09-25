@@ -149,10 +149,10 @@ Three rules the tool follows:
 Create `bounties.yaml`:
 
 ```yaml
-- id: fix-142
-  title: "Fix memory leak in parser"
-  content: "<p>Long-running processes accumulate memory. See issue #142.</p>"
-  tags: [bug, rust]
+- id: proxy-env
+  title: "Respect the HTTPS_PROXY variable"
+  content: "<p>A reused session ignores HTTPS_PROXY. See issue #142.</p>"
+  tags: [bug, python]
   amount: "1.00"
   minSubmission: "1.00"
 ```
@@ -163,17 +163,17 @@ Then preview and apply:
 $ gibwork-sync plan --profile stage
 wallet 9K1Zp3wokoer3AVVTExhJkoudkfKSD939xGBJ4u6cx2h  ·  stage  ·  credentials from profile keypair
 
-  + create   fix-142          1.00
+  + create   proxy-env        1.00
 
 Plan: 1 to create, 0 to update, 0 to refund.
 
 $ gibwork-sync apply --profile stage
-  + create   fix-142          1.00
+  + create   proxy-env        1.00
 
 Plan: 1 to create, 0 to update, 0 to refund.
 Apply these changes to stage? [y/N] y
 
-  created fix-142 -> fcfb7a61-edd5-42f7-ad2e-59ae229bbac9
+  created proxy-env -> fcfb7a61-edd5-42f7-ad2e-59ae229bbac9
 
 Applied: 1 created, 0 updated, 0 refunded.
 ```
@@ -187,7 +187,7 @@ $ cat .gibwork/state.json
   "wallet": "9K1Zp3wokoer3AVVTExhJkoudkfKSD939xGBJ4u6cx2h",
   "environment": "stage",
   "tasks": {
-    "fix-142": {
+    "proxy-env": {
       "taskId": "fcfb7a61-edd5-42f7-ad2e-59ae229bbac9",
       "lastAppliedHash": "2011b853086adb6c",
       "lastSyncedAt": "2026-09-18T10:42:22.519Z"
@@ -197,7 +197,7 @@ $ cat .gibwork/state.json
 }
 ```
 
-Keep that file. It is the only thing connecting `fix-142` to that UUID. Delete
+Keep that file. It is the only thing connecting `proxy-env` to that UUID. Delete
 it and the tool forgets the bounty exists, with your money still in escrow.
 
 For one bounty, the official CLI is just as good: `gibwork task create` with
@@ -208,7 +208,7 @@ bounty, and at the second time you run anything.
 
 ## What a normal Friday looks like
 
-You have twelve bounties live. Three got fixed upstream, two need clearer
+You have five bounties live. One got fixed upstream, two need clearer
 descriptions, and a new bug needs funding.
 
 ### With the official CLI
@@ -216,79 +216,78 @@ descriptions, and a new bug needs funding.
 First find out what you have, then copy a UUID out of the list for each change:
 
 ```
-$ gibwork task list --profile stage --all
+$ gibwork task list --profile stage --limit 5
 ID                                    STATUS       OPEN   TITLE
-fcfb7a61-edd5-42f7-ad2e-59ae229bbac9  in progress  true   Fix memory leak in parser
-7b2e1f04-9c31-4a8d-b6e2-1f0a5c8d3e44  in progress  true   Document the CLI flags
-9c04ab13-2e77-4b10-a3f5-6d8e0b2c1a99  in progress  true   Add a benchmark suite
-                                             ... 9 more rows
+fcfb7a61-edd5-42f7-ad2e-59ae229bbac9  in progress  true   Connection leak on streamed responses
+7b2e1f04-9c31-4a8d-b6e2-1f0a5c8d3e44  in progress  true   Rewrite the quickstart guide
+3d5f8a10-4b2c-49e7-8f31-0c7a9e6b2d55  in progress  true   Clearer timeout error messages
+9c04ab13-2e77-4b10-a3f5-6d8e0b2c1a99  in progress  true   Jittered retry backoff
+b8e07c94-1a6d-4f52-9e88-2c4b7d0a3f61  in progress  true   Persist the cookie jar across sessions
 
 $ gibwork task refund fcfb7a61-edd5-42f7-ad2e-59ae229bbac9 --profile stage
-$ gibwork task refund 9c04ab13-2e77-4b10-a3f5-6d8e0b2c1a99 --profile stage
-$ gibwork task refund e1c39b27-8f04-4d6a-b512-7a90c6e8f4d3 --profile stage
 $ gibwork task update 7b2e1f04-9c31-4a8d-b6e2-1f0a5c8d3e44 --profile stage --content-file docs.html
-$ gibwork task update 3d5f8a10-4b2c-49e7-8f31-0c7a9e6b2d55 --profile stage --content-file auth.html
+$ gibwork task update 3d5f8a10-4b2c-49e7-8f31-0c7a9e6b2d55 --profile stage --content-file timeout.html
 $ gibwork task create --profile stage \
-    --title "Fix Unicode crash in CSV export" \
-    --content-file csv.html --tag bug --tag python \
-    --amount 5.00 --min-submission 5.00
+    --title "HTTP/2 ALPN negotiation fails on macOS" \
+    --content-file alpn.html --tag bug --tag macos \
+    --amount 1.00 --min-submission 1.00
 ```
 
-Six commands, six confirmations, **five UUIDs copied by hand**, and no preview.
+Four commands, four confirmations, **three UUIDs copied by hand**, and no
+preview.
 Paste the wrong UUID into a refund and you close a bounty somebody is actively
 working on. Nothing warns you.
 
 ### With gibwork-sync
 
-Edit one file: delete three entries, change two `content:` lines, add one.
+Edit one file: delete one entry, change two `content:` lines, add one.
 
 ```diff
 $ git diff bounties.yaml
--- id: parser-leak
--  title: "Fix memory leak in parser"
--  content: "<p>Long-running processes accumulate memory.</p>"
--  tags: [bug, rust]
--  amount: "3.00"
+-- id: stream-leak
+-  title: "Connection leak on streamed responses"
+-  content: "<p>Streamed responses never release their socket.</p>"
+-  tags: [bug, python]
+-  amount: "1.00"
 -
- - id: docs-cli
--  content: "<p>Every flag needs a line in the README.</p>"
-+  content: "<p>Every flag needs a line in the README, with an example.</p>"
+ - id: docs-quickstart
+-  content: "<p>The quickstart is out of date.</p>"
++  content: "<p>The quickstart is out of date. Cover install, first request and auth.</p>"
 +
-+- id: csv-unicode
-+  title: "Fix Unicode crash in CSV export"
-+  content: "<p>Non-ASCII column headers crash the exporter. See #211.</p>"
-+  tags: [bug, python]
-+  amount: "5.00"
++- id: http2-alpn
++  title: "HTTP/2 ALPN negotiation fails on macOS"
++  content: "<p>ALPN falls back to HTTP/1.1 on macOS only. See #211.</p>"
++  tags: [bug, macos]
++  amount: "1.00"
 ```
 
 ```
 $ gibwork-sync plan --profile stage
-  + create   csv-unicode      5.00
-  ~ update   docs-cli         content  (7b2e1f04)
-  ~ update   auth-flaky       content  (3d5f8a10)
-  - refund   parser-leak      Fix memory leak in parser  (fcfb7a61)
-  - refund   bench-suite      Add a benchmark suite  (9c04ab13)
-  - refund   win-paths        Windows path handling  (e1c39b27)
-    6 unchanged
+  + create   http2-alpn       1.00
+  ~ update   docs-quickstart  content  (7b2e1f04)
+  ~ update   timeout-msg      content  (3d5f8a10)
+  - refund   stream-leak      Connection leak on streamed responses  (fcfb7a61)
+    2 unchanged
 
-Plan: 1 to create, 2 to update, 3 to refund.
+Plan: 1 to create, 2 to update, 1 to refund.
 
 $ gibwork-sync apply --profile stage
 Apply these changes to stage? [y/N] y
 ```
 
 **One screen showing everything that will happen, before any of it happens.**
-One confirmation instead of six. No UUID typed at any point. The short hashes
+One confirmation instead of four. No UUID typed at any point. The short hashes
 in brackets are output you can cross-check, not input you have to get right.
 And because it is a `git diff`, a teammate can review a bounty change in a pull
 request before it spends money.
 
 **The part that is not about convenience:** run the CLI block twice and you get
-a second "Fix Unicode crash in CSV export" bounty and another 5.00 USDC gone.
+a second "HTTP/2 ALPN negotiation fails on macOS" bounty and another 1.00 USDC
+gone.
 Run `apply` twice and the second run prints:
 
 ```
-    12 unchanged
+    5 unchanged
 
 No changes. bounties.yaml matches live Gibwork state.
 ```
@@ -456,8 +455,8 @@ If you posted bounties through the Gibwork app or CLI, run this once:
 ```
 $ gibwork-sync import --profile stage
 Reading live tasks...
-  fix-memory-leak-in-parser        1.00  (fcfb7a61)
-  document-the-cli-flags           1.00  (7b2e1f04)
+  respect-the-https-proxy-variable  1.00  (fcfb7a61)
+  add-a-dry-run-flag                1.00  (7b2e1f04)
 
 Imported 2 bounty(s) into bounties.yaml.
 Verified: the generated file reports zero changes against live state.
@@ -689,6 +688,8 @@ which is fine for a deploy script and not fine when each run costs money.
 Video: _add your link here_
 
 Screenshots: see [`docs/screenshots/`](docs/screenshots/)
+
+To reproduce every example in this README yourself, follow [`demo/`](demo/).
 
 ---
 

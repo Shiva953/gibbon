@@ -30,3 +30,6 @@ logs
 .idea
 .cursor/
 .DS_Store
+
+#demo
+/demo/
