@@ -17,7 +17,7 @@ import { diffLines } from '../src/lib/render.js';
 import type { BountyEntry } from '../src/types.js';
 
 function scratch(): string {
-  return mkdtempSync(join(tmpdir(), 'gibwork-sync-test-'));
+  return mkdtempSync(join(tmpdir(), 'gibbon-test-'));
 }
 
 const entry: BountyEntry = {
@@ -77,7 +77,7 @@ describe('state file', () => {
     const cwd = scratch();
     saveState(emptyState(), cwd);
     writeFileSync(stateFilePath(cwd), JSON.stringify({ version: 99 }), 'utf8');
-    expect(() => loadState(cwd)).toThrow(/not a gibwork-sync v1 state file/);
+    expect(() => loadState(cwd)).toThrow(/not a gibbon v1 state file/);
   });
 
   test('rejects a corrupt state file with a recoverable message', () => {

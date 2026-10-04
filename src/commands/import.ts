@@ -71,7 +71,7 @@ function fileHasContent(path: string): boolean {
 
 /**
  * Generates bounties.yaml and .gibwork/state.json from this wallet's live
- * tasks, so an existing creator can adopt gibwork-sync without a hand-written
+ * tasks, so an existing creator can adopt gibbon without a hand-written
  * file — which would otherwise plan `+ create` over bounties that already
  * exist and fund duplicates.
  *
@@ -139,7 +139,7 @@ export async function importCommand(runtime: Runtime, options: ImportOptions): P
       'The generated file does not round-trip to zero changes, so nothing was written.\n' +
         `  would create ${check.toCreate.length}, update ${check.toUpdate.length}, ` +
         `refund ${check.toRefund.length}, blocked ${check.blocked.length}\n` +
-        '  This is a bug in gibwork-sync — please report it with your task list.',
+        '  This is a bug in gibbon — please report it with your task list.',
       'PROTOCOL_ERROR',
       EXIT.INTERNAL,
     );
@@ -166,7 +166,7 @@ export async function importCommand(runtime: Runtime, options: ImportOptions): P
       (skipped > 0 ? `, skipped ${skipped} not open or not editable by this wallet` : '') +
       '.\n' +
       'Verified: the generated file reports zero changes against live state.\n\n' +
-      'Run `gibwork-sync plan` to confirm, then edit the file as your source of truth.\n\n',
+      'Run `gibbon plan` to confirm, then edit the file as your source of truth.\n\n',
   );
 }
 

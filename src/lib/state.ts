@@ -61,12 +61,12 @@ export function loadState(cwd: string = process.cwd()): SyncState {
     parsed = JSON.parse(raw);
   } catch {
     throw new Error(
-      `${path} is not valid JSON. Fix or delete it, then re-run \`gibwork-sync import\` to rebuild it.`,
+      `${path} is not valid JSON. Fix or delete it, then re-run \`gibbon import\` to rebuild it.`,
     );
   }
 
   if (!isRecord(parsed) || parsed['version'] !== 1) {
-    throw new Error(`${path} is not a gibwork-sync v1 state file.`);
+    throw new Error(`${path} is not a gibbon v1 state file.`);
   }
 
   const tasks = isRecord(parsed['tasks']) ? (parsed['tasks'] as Record<string, TrackedTask>) : {};

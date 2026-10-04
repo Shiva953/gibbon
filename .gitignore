@@ -7,8 +7,8 @@ out
 *.tgz
 *.tsbuildinfo
 
-# gibwork-sync local state: per-wallet, per-environment, and regenerable
-# with `gibwork-sync import`. Never commit it.
+# gibbon local state: per-wallet, per-environment, and regenerable
+# with `gibbon import`. Never commit it.
 .gibwork/
 
 # secrets

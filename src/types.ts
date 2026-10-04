@@ -80,7 +80,7 @@ export interface PendingOperation {
   error?: string;
 }
 
-/** A task gibwork-sync has successfully created and is tracking. */
+/** A task gibbon has successfully created and is tracking. */
 export interface TrackedTask {
   taskId: string;
   /** Hash of the applied entry, used to detect drift on the next run. */
@@ -91,7 +91,7 @@ export interface TrackedTask {
 
 /**
  * Local state file (.gibwork/state.json). Gitignored: it is per-wallet,
- * per-environment, and regenerable via `gibwork-sync import`.
+ * per-environment, and regenerable via `gibbon import`.
  */
 export interface SyncState {
   version: 1;

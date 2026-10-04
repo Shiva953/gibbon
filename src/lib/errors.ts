@@ -80,7 +80,7 @@ export function normalizeError(error: unknown): NormalizedError {
       exitCode: EXIT.AMBIGUOUS_SUBMIT,
       message:
         'The submit outcome is unknown. Read the current state with ' +
-        '`gibwork-sync status`; do not apply again.',
+        '`gibbon status`; do not apply again.',
       details: { ...error.context },
     };
   }

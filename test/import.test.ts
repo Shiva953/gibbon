@@ -15,8 +15,8 @@ import { DEFAULT_MINT, isNoOp } from '../src/types.js';
 function details(over: Partial<TaskDetails> = {}): TaskDetails {
   return {
     id: 'fcfb7a61-edd5-42f7-ad2e-59ae229bbac9',
-    title: 'gibwork-sync probe A',
-    content: '<p>Test bounty for gibwork-sync. Please do not submit.</p>',
+    title: 'gibbon probe A',
+    content: '<p>Test bounty for gibbon. Please do not submit.</p>',
     tags: ['test'],
     status: 'CREATED',
     isOpen: true,
@@ -30,7 +30,7 @@ function details(over: Partial<TaskDetails> = {}): TaskDetails {
 
 describe('slugify', () => {
   test('derives a readable, stable id from the title', () => {
-    expect(slugify('gibwork-sync probe A')).toBe('gibwork-sync-probe-a');
+    expect(slugify('gibbon probe A')).toBe('gibbon-probe-a');
     expect(slugify('Fix memory leak in parser!')).toBe('fix-memory-leak-in-parser');
   });
 
@@ -47,12 +47,12 @@ describe('import round-trip', () => {
     // state, or adopting the tool proposes work that should not happen.
     const d = details();
     const live = toLiveTask(d);
-    const entry = toEntry('gibwork-sync-probe-a', d, live);
+    const entry = toEntry('gibbon-probe-a', d, live);
 
     const state: SyncState = {
       version: 1,
       tasks: {
-        'gibwork-sync-probe-a': {
+        'gibbon-probe-a': {
           taskId: live.taskId,
           lastAppliedHash: hashEntry(entry),
           lastSyncedAt: 't',

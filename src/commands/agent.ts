@@ -106,7 +106,7 @@ export async function agentCommand(options: AgentOptions): Promise<void> {
 
   if (changed.length > 0) {
     writeFileSync(resolve(options.file), result.yaml.endsWith('\n') ? result.yaml : `${result.yaml}\n`);
-    process.stdout.write(`\nWrote ${options.file}. Review it, then run \`gibwork-sync plan\`.\n\n`);
+    process.stdout.write(`\nWrote ${options.file}. Review it, then run \`gibbon plan\`.\n\n`);
   } else {
     process.stdout.write('\n');
   }

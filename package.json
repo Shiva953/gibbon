@@ -1,14 +1,14 @@
 {
-  "name": "gibwork-sync",
+  "name": "gibbon",
   "version": "0.1.0",
-  "description": "Declarative, version-controlled bounty management for Gibwork. Describe your bounties in bounties.yaml, then plan and apply them like Terraform.",
+  "description": "Bounties as code for Gibwork. Keep your bounty backlog in one YAML file, preview every change, and never pay twice.",
   "type": "module",
   "license": "MIT",
   "engines": {
     "node": ">=22"
   },
   "bin": {
-    "gibwork-sync": "./dist/index.js"
+    "gibbon": "./dist/index.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,9 +22,12 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test ./test/*.test.ts",
     "test:live": "bun test test/live",
+    "site": "bun --cwd site run dev",
+    "prepare": "tsc",
     "prepublishOnly": "bun run build"
   },
   "keywords": [
+    "gibbon",
     "gibwork",
     "bounties",
     "solana",

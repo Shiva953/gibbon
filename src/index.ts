@@ -35,9 +35,9 @@ function parseTimeout(value: string): number {
 const program = new Command();
 
 program
-  .name('gibwork-sync')
+  .name('gibbon')
   .description(
-    'Declarative bounty management for Gibwork. Edit bounties.yaml, then plan/apply ' +
+    'Bounties as code for Gibwork. Edit bounties.yaml, then plan/apply ' +
       'to reconcile it with the live platform.',
   )
   .version(VERSION)
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
     process.stderr.write(
       json
         ? `${JSON.stringify({ ok: false, error: { code, message } })}\n`
-        : `\ngibwork-sync [${code}]: ${message}\n`,
+        : `\ngibbon [${code}]: ${message}\n`,
     );
     process.exitCode = exitCode;
   }

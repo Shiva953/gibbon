@@ -270,7 +270,7 @@ describe('normalization', () => {
     //   minSubmissionAmount: 1                      <- whole tokens, number
     const live = toLiveTask({
       id: 'uuid-1',
-      title: 'gibwork-sync probe A',
+      title: 'gibbon probe A',
       content: '<p>x</p>',
       tags: ['test'],
       status: 'CREATED',

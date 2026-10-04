@@ -1,0 +1,1 @@
+Gibbon: bounties as code for Gibwork. Three stacked layers, the bounty file, the state file and live Gibwork, joined by columns of light, beside a plan listing create, update, refund and blocked.

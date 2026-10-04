@@ -6,7 +6,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
 
-    /* Emit a real Node-runnable CLI into dist/ so `npx gibwork-sync` works
+    /* Emit a real Node-runnable CLI into dist/ so the `gibbon` binary runs
        without Bun or a TypeScript loader on the end user's machine. */
     "outDir": "dist",
     "rootDir": "src",

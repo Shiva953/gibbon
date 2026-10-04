@@ -30,9 +30,9 @@ const AgentResult = z.object({
 
 export type AgentResult = z.infer<typeof AgentResult>;
 
-const SYSTEM = `You edit a bounties.yaml file for gibwork-sync, a declarative tool that
+const SYSTEM = `You edit a bounties.yaml file for gibbon, a declarative tool that
 reconciles a Gibwork bounty program against this file. You ONLY edit the file. You never
-create, fund, or refund anything — a human reviews your edit and runs \`gibwork-sync apply\`.
+create, fund, or refund anything — a human reviews your edit and runs \`gibbon apply\`.
 
 FILE FORMAT — a YAML list. Each entry:
   id             required, stable key chosen by the maintainer. NOT the Gibwork UUID.
@@ -91,7 +91,7 @@ export function assertAnthropicCredentials(): void {
       '  export ANTHROPIC_API_KEY=sk-ant-...     from console.anthropic.com',
       '  ant auth login                          if you use the Anthropic CLI',
       '',
-      'Every other gibwork-sync command works without this — only `agent` needs it.',
+      'Every other gibbon command works without this — only `agent` needs it.',
     ].join('\n'),
     'CREDENTIAL_ERROR',
     EXIT.CREDENTIAL,

@@ -9,7 +9,7 @@ import { describe, expect, test } from 'bun:test';
  *
  * The critical case below is the reason this project exists: the SDK's
  * prepare -> sign -> submit flow can be interrupted, leaving an intent in
- * pending / submitted / requires_review. gibwork-sync must notice and refuse
+ * pending / submitted / requires_review. gibbon must notice and refuse
  * to blindly re-apply over it rather than risk a double spend.
  */
 

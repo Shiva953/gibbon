@@ -155,8 +155,8 @@ export async function resolveCredential(
       throw new CredentialError(
         'No wallet configured. Use --keypair, --private-key-stdin, GIBWORK_KEYPAIR_PATH, ' +
           'GIBWORK_PRIVATE_KEY, or set keypair-path in a profile.\n\n' +
-          'gibwork-sync never reads .env on its own. Load it explicitly:\n' +
-          '  node --env-file=.env $(which gibwork-sync) plan',
+          'gibbon never reads .env on its own. Load it explicitly:\n' +
+          '  node --env-file=.env $(which gibbon) plan',
       );
     }
   }

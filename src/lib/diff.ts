@@ -125,7 +125,7 @@ export function computePlan(input: DiffInput): Plan {
         reason:
           `tracked task ${tracked.taskId} was not returned by this wallet. ` +
           'Verify it with `gibwork task get`, then remove the entry or fix state.json. ' +
-          'gibwork-sync will not recreate it automatically.',
+          'gibbon will not recreate it automatically.',
       });
       continue;
     }
@@ -166,7 +166,7 @@ export function computePlan(input: DiffInput): Plan {
     }
   }
 
-  // Tracked tasks the file no longer asks for. Only ever tasks gibwork-sync
+  // Tracked tasks the file no longer asks for. Only ever tasks gibbon
   // recorded itself — an untracked live task is never touched, which is what
   // makes adopting the tool on an established wallet safe.
   for (const [id, tracked] of Object.entries(state.tasks)) {

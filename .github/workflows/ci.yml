@@ -3,7 +3,7 @@ name: ci
 # Typecheck, test and build only. This repository is the TOOL's source — its
 # bounties.yaml is a sample, not a funded program — so there is deliberately no
 # job here that can reach Gibwork or spend money. The plan/apply workflow for
-# people adopting gibwork-sync in their own repo lives in the README.
+# people adopting gibbon in their own repo lives in the README.
 
 on:
   pull_request:

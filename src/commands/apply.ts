@@ -47,7 +47,7 @@ function reportFailure(error: unknown): void {
         `  environment: ${environment ?? 'unknown'}`,
         '',
         'This has been recorded in .gibwork/state.json. Do NOT re-run apply.',
-        'Run `gibwork-sync status` to read the real state back from Gibwork.',
+        'Run `gibbon status` to read the real state back from Gibwork.',
         '',
       ].join('\n'),
     );
@@ -56,7 +56,7 @@ function reportFailure(error: unknown): void {
 
   const { code, message } = normalizeError(error);
   process.stderr.write(
-    `\napply failed [${code}]: ${message}\n\nRun \`gibwork-sync status\` before retrying.\n\n`,
+    `\napply failed [${code}]: ${message}\n\nRun \`gibbon status\` before retrying.\n\n`,
   );
 }
 
@@ -188,7 +188,7 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
     if (unresolved > 0) {
       process.stdout.write(
         `\n${unresolved} operation(s) did not reach a confirmed state. ` +
-          'Run `gibwork-sync status` to resolve them.\n',
+          'Run `gibbon status` to resolve them.\n',
       );
     }
     process.stdout.write('\n');

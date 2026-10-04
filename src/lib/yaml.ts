@@ -102,7 +102,7 @@ export function loadBounties(path: string): BountyEntry[] {
     if (isRecord(cause) && cause['code'] === 'ENOENT') {
       throw new BountyFileError(
         `No bounty file at ${absolute}.\n` +
-          'Create one, or run `gibwork-sync import` to generate it from your live tasks.',
+          'Create one, or run `gibbon import` to generate it from your live tasks.',
       );
     }
     throw cause;
@@ -147,9 +147,9 @@ export function dumpBounties(entries: BountyEntry[]): string {
     '# bounties.yaml — the bounties that should exist on Gibwork.',
     '#',
     '# `id` is your own stable key, not the Gibwork UUID. Do not change it once',
-    '# applied: gibwork-sync would read that as "refund the old, create a new".',
+    '# applied: gibbon would read that as "refund the old, create a new".',
     '#',
-    '# Preview changes with `gibwork-sync plan`, then `gibwork-sync apply`.',
+    '# Preview changes with `gibbon plan`, then `gibbon apply`.',
     '',
   ].join('\n');
 

@@ -62,7 +62,7 @@ export function renderPending(pending: PendingOperation[]): string {
     if (op.lastKnownStatus) lines.push(`            last known status: ${op.lastKnownStatus}`);
   }
   lines.push('');
-  lines.push('Run `gibwork-sync status` to resolve them before applying again.');
+  lines.push('Run `gibbon status` to resolve them before applying again.');
   lines.push('');
   return lines.join('\n');
 }

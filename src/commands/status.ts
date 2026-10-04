@@ -125,6 +125,6 @@ export async function statusCommand(runtime: Runtime, options: StatusOptions): P
 
   process.stdout.write(
     `\nAll clear. ${adopted} confirmed, ${retryable} safe to apply again.\n` +
-      'Run `gibwork-sync plan` to see what is left to do.\n\n',
+      'Run `gibbon plan` to see what is left to do.\n\n',
   );
 }
