@@ -58,6 +58,6 @@ to the "Other" preset and the deploy fails looking for a `public` folder.
 To deploy on every push instead, connect the GitHub repository in the Vercel
 dashboard and set **Root Directory** to `site`.
 
-`src/app/opengraph-image.png` is the social share image and `docs/banner.png`
-in the repository root is the README banner. Both are rendered from the hero
-illustration.
+`src/app/opengraph-image.png` is the social share image, rendered from the hero
+illustration. `docs/preview.png` in the repository root is the screenshot of
+this site shown under the title of the main README.

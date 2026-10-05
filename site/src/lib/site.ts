@@ -1,6 +1,6 @@
-/** Change these two when the GitHub repository is renamed. */
-export const REPO_URL = "https://github.com/Shiva953/gibwork-sync";
-export const INSTALL_COMMAND = "npm i -g github:Shiva953/gibwork-sync";
+/** The GitHub repository. Every link and install command on the site comes from these two. */
+export const REPO_URL = "https://github.com/Shiva953/gibbon";
+export const INSTALL_COMMAND = "npm i -g github:Shiva953/gibbon";
 
 export const VERSION = "0.1.0";
 

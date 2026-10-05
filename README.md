@@ -1,12 +1,16 @@
-![Gibbon: bounties as code for Gibwork. Three stacked layers, the bounty file, the state file and live Gibwork, joined by columns of light, beside a plan listing create, update, refund and blocked.](docs/banner.png)
-
 # Gibbon
+
+[![The Gibbon site's hero: the headline "Bounties as code", the install command, and an illustration of three stacked layers, the bounty file, the state file and live Gibwork, joined by columns of light beside a plan.](docs/preview.png)](https://gibbon-site.vercel.app)
 
 **Bounties as code for Gibwork.**
 
 Keep your bounty backlog in one YAML file, preview every change, and never pay twice.
 
-**[Quick start](#quick-start)**  ·  **[How it works](#how-it-works)**  ·  **[Architecture](#architecture)**  ·  **[Reference](#reference)**  ·  **[Landing page](https://gibbon-site.vercel.app)**
+**[Getting started](#getting-started)**\
+**[How it works](#how-it-works)**\
+**[Architecture](#architecture)**\
+**[Cheat sheet](#cheat-sheet)**\
+**[Landing page](https://gibbon-site.vercel.app)**
 
 ---
 
@@ -40,19 +44,19 @@ There is no web app and no dashboard.
 
 ## Contents
 
-- [Why Gibbon](#why-gibbon)
-- [What works today](#what-works-today)
+- [The problem](#the-problem)
+- [Status](#status)
 - [How it works](#how-it-works)
-- [Quick start](#quick-start)
+- [Getting started](#getting-started)
 - [What a normal Friday looks like](#what-a-normal-friday-looks-like)
 - [But Gibwork already has an AI agent for this](#but-gibwork-already-has-an-ai-agent-for-this)
 - [Already have bounties? Use import](#already-have-bounties-use-import)
 - [Writing the file with AI](#writing-the-file-with-ai)
 - [Architecture](#architecture)
-- [Reference](#reference)
+- [Cheat sheet](#cheat-sheet)
 - [What this uses from Gibwork](#what-this-uses-from-gibwork)
 - [Using it in CI](#using-it-in-ci)
-- [Development](#development)
+- [Working on Gibbon](#working-on-gibbon)
 - [Where this could go](#where-this-could-go)
 - [Demo](#demo)
 
@@ -60,7 +64,7 @@ There is no web app and no dashboard.
 
 
 
-## Why Gibbon
+## The problem
 
 Say you run bounties for your open source project, and ten are live. Today you
 manage them one at a time: to edit one, you list them all, find it, copy its
@@ -86,18 +90,18 @@ If your reaction is *"Gibwork already has an AI agent that can do all this"*,
 that is the right question. [There is a section on it below](#but-gibwork-already-has-an-ai-agent-for-this)
 with four things you can try yourself.
 
-## What works today
+## Status
 
+All five commands work.
 
-| Capability                                                 | Status                                 |
-| ---------------------------------------------------------- | -------------------------------------- |
-| `plan`: read-only preview of every change                  | Run against the live Gibwork stage API |
-| `apply`: create, update and refund, with the crash barrier | Run against the live Gibwork stage API |
-| `import`: build the file from bounties you already posted  | Run against the live Gibwork stage API |
-| `status`: resolve an interrupted `apply`                   | Run against the live Gibwork stage API |
-| `agent`: rewrite the file from a plain English request     | Working. Needs an Anthropic API key    |
-| `--json` output and exit codes matching the official CLI   | Working                                |
-| Automated tests                                            | 92, none of which touch the network    |
+- Run against the live Gibwork stage API:
+  - `plan`: read-only preview of every change
+  - `apply`: create, update and refund, with the crash barrier
+  - `import`: build the file from bounties you already posted
+  - `status`: resolve an interrupted `apply`
+- `agent`: rewrite the file from a plain English request. Working; needs an Anthropic API key.
+- `--json` output and exit codes matching the official CLI: working.
+- Automated tests: 92, none of which touch the network.
 
 
 ---
@@ -135,17 +139,17 @@ For how the code does this, see [Architecture](#architecture).
 
 
 
-## Quick start
+## Getting started
 
 
 
-### Install
+### Get the CLI
 
 You need Node.js 22 or newer and [Bun](https://bun.sh) to build.
 
 ```bash
-git clone https://github.com/Shiva953/gibwork-sync
-cd gibwork-sync
+git clone https://github.com/Shiva953/gibbon
+cd gibbon
 bun install && bun run build
 alias gibbon="node $PWD/dist/index.js"
 ```
@@ -153,7 +157,7 @@ alias gibbon="node $PWD/dist/index.js"
 Or install the `gibbon` command globally, straight from GitHub:
 
 ```bash
-npm i -g github:Shiva953/gibwork-sync
+npm i -g github:Shiva953/gibbon
 ```
 
 
@@ -184,7 +188,6 @@ never read on its own (use `node --env-file=.env`); and setting both key
 variables is an error, not a guess, because you should never be unsure which
 wallet signed.
 
-> [!WARNING]
 > **Stage is not free.** Gibwork's `stage` environment keeps test bounties out
 > of the main marketplace, but settles in **real mainnet USDC**. The minimum
 > bounty is 1.00 USDC. Creating is fee free and refunding costs about 0.01
@@ -243,7 +246,6 @@ $ cat .gibwork/state.json
 }
 ```
 
-> [!IMPORTANT]
 > Keep that file. It is the only thing connecting `proxy-env` to that UUID.
 > Delete it and Gibbon forgets the bounty exists, with your money still in
 > escrow.
@@ -491,7 +493,6 @@ It writes both files. The last line is a safety check: before writing
 anything, it compares the file it built against your live bounties, and if they
 do not match exactly it writes nothing.
 
-> [!CAUTION]
 > **Do not skip this step.** If you hand write a file describing bounties you
 > already have, Gibbon has no record connecting them, so `plan` will say
 > "create" for every one and `apply` will duplicate them all with real money.
@@ -534,9 +535,9 @@ fails to parse instead of a refunded bounty.
 
 ## Architecture
 
-About 3,200 lines of TypeScript in `src/`, built on `@gibwork/sdk`. The design
-goal is narrow: **every decision that can move money is made in one place, and
-nothing is signed until the tool can recover from being killed.**
+TypeScript in `src/`, built on `@gibwork/sdk`. The design goal is narrow:
+**every decision that can move money is made in one place, and nothing is
+signed until the tool can recover from being killed.**
 
 ### The shape of a run
 
@@ -708,7 +709,7 @@ loader rejects it.
 
 
 
-## Reference
+## Cheat sheet
 
 
 
@@ -845,7 +846,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |      # not on npm yet; install from source
-          npm i -g github:Shiva953/gibwork-sync
+          npm i -g github:Shiva953/gibbon
       - env: { GIBWORK_PRIVATE_KEY: "${{ secrets.GIBWORK_PRIVATE_KEY }}" }
         run: gibbon plan --environment ${{ vars.GIBWORK_ENV }}
 
@@ -856,7 +857,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |      # not on npm yet; install from source
-          npm i -g github:Shiva953/gibwork-sync
+          npm i -g github:Shiva953/gibbon
       - env: { GIBWORK_PRIVATE_KEY: "${{ secrets.GIBWORK_PRIVATE_KEY }}" }
         run: |
           gibbon status --environment ${{ vars.GIBWORK_ENV }}
@@ -884,7 +885,7 @@ which is fine for a deploy script and not fine when each run costs money.
 
 
 
-## Development
+## Working on Gibbon
 
 ```bash
 bun install && bun run typecheck && bun run test && bun run build

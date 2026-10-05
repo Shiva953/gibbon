@@ -79,7 +79,7 @@ export default function InstallPage() {
       </ol>
       <p className="mt-6 text-[12.5px] text-dim sm:pl-[3rem]">
         Prefer a clone?{" "}
-        <a href={`${REPO_URL}#quick-start`} className="text-amber underline underline-offset-4">
+        <a href={`${REPO_URL}#getting-started`} className="text-amber underline underline-offset-4">
           Build from source
         </a>{" "}
         with Bun.
