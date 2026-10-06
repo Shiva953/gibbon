@@ -77,7 +77,7 @@ export default function InternalsPage() {
       lede="Every decision that can move money is made in computePlan: no network, no clock, no disk."
       facts={[
         { tone: "amber", text: "the middle file is why you never type a UUID" },
-        { tone: "leaf", text: "92 offline tests" },
+        { tone: "leaf", text: "100 offline tests" },
       ]}
       layout="stack"
     >

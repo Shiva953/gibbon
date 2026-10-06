@@ -1,9 +1,32 @@
 import { GibworkAmbiguousSubmitError, signPreparedTransaction } from '@gibwork/sdk';
 import type { CreateTaskInput, GibworkClient, UpdateTaskInput, WalletSigner } from '@gibwork/sdk';
 import type { BountyEntry, Plan, PlannedUpdate, SyncState } from '../types.js';
+import { CliError, EXIT } from './errors.js';
 import { resolveEntry } from './normalize.js';
-import type { Pacer } from './pacer.js';
+import { realSleep } from './pacer.js';
+import type { Pacer, Sleep } from './pacer.js';
 import { clearPending, forgetTask, markPending, recordTask } from './state.js';
+
+/** Upper bound for the crash-test pause, so a typo cannot stall a run for hours. */
+export const MAX_FAULT_PAUSE_MS = 60_000;
+
+/**
+ * Parses GIBBON_FAULT_PAUSE_MS. Unset or empty means off (0). Anything that is
+ * not a whole number of milliseconds in range is a usage error, never a silent 0.
+ */
+export function parseFaultPauseMs(raw: string | undefined): number {
+  const value = raw?.trim();
+  if (!value) return 0;
+  const ms = Number(value);
+  if (!Number.isInteger(ms) || ms < 0 || ms > MAX_FAULT_PAUSE_MS) {
+    throw new CliError(
+      `GIBBON_FAULT_PAUSE_MS must be a whole number of milliseconds from 0 to ${MAX_FAULT_PAUSE_MS}, got "${value}".`,
+      'USAGE_ERROR',
+      EXIT.USAGE,
+    );
+  }
+  return ms;
+}
 
 /** Everything an executor needs. Injectable so tests can drive it offline. */
 export interface ExecutorDeps {
@@ -17,6 +40,23 @@ export interface ExecutorDeps {
   /** Aborting before a submit is safe; after it, `status` recovers. */
   signal?: AbortSignal;
   log?: (message: string) => void;
+  /**
+   * Crash testing only (GIBBON_FAULT_PAUSE_MS). Holds each operation open after
+   * its submit returns and BEFORE the result is recorded: the funds have moved,
+   * but nothing local says so yet. Killing the process inside this window must
+   * leave a marker that `apply` refuses over and `status` settles. 0 = off.
+   */
+  faultPauseMs?: number;
+  /** Injectable so tests can observe the fault pause without real time. */
+  pause?: Sleep;
+}
+
+/** The crash-test window. A no-op unless `faultPauseMs` is set. */
+async function faultPause(deps: ExecutorDeps, id: string): Promise<void> {
+  const ms = deps.faultPauseMs ?? 0;
+  if (ms <= 0) return;
+  deps.log?.(`… fault pause ${Math.round(ms / 1000)}s: ${id} submitted, not yet recorded`);
+  await (deps.pause ?? realSleep)(ms, deps.signal);
 }
 
 /** SDK RequestOptions, omitted entirely when there is no signal to pass. */
@@ -111,8 +151,10 @@ export async function execCreate(
   const sign = deps.sign ?? signPreparedTransaction;
   const signedTransaction = await sign(prepared.serializedTransaction, deps.signer);
 
-  // SUBMIT — funds move here.
+  // SUBMIT — funds move here. Announced first: from this line until the result
+  // prints, the outcome is only knowable through `status`.
   await deps.pacer.submit();
+  deps.log?.(`… submitting ${entry.id}`);
   let result;
   try {
     result = await deps.client.tasks.submitCreate(prepared.intentId, signedTransaction, req(deps));
@@ -129,6 +171,8 @@ export async function execCreate(
     deps.save(next);
     throw error;
   }
+
+  await faultPause(deps, entry.id);
 
   // SETTLE — 'processing' is not success.
   if (result.status === 'confirmed') {
@@ -177,6 +221,7 @@ export async function execRefund(
   const signedTransaction = await sign(prepared.serializedTransaction, deps.signer);
 
   await deps.pacer.submit();
+  deps.log?.(`… submitting ${target.id} (refund)`);
   let result;
   try {
     result = await deps.client.tasks.submitRefund(
@@ -196,6 +241,8 @@ export async function execRefund(
     deps.save(next);
     throw error;
   }
+
+  await faultPause(deps, target.id);
 
   next = forgetTask(next, target.id);
   next = clearPending(next, target.id, 'refund');

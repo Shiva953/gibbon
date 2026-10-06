@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { GibworkClient, WalletSigner } from '@gibwork/sdk';
-import { execCreate, execRefund, execUpdate, toCreateInput } from '../src/lib/executor.js';
+import {
+  execCreate,
+  execRefund,
+  execUpdate,
+  parseFaultPauseMs,
+  toCreateInput,
+} from '../src/lib/executor.js';
 import type { ExecutorDeps } from '../src/lib/executor.js';
 import { Pacer } from '../src/lib/pacer.js';
 import type { BountyEntry, SyncState } from '../src/types.js';
@@ -149,6 +155,112 @@ describe('execCreate — the crash barrier', () => {
     await execCreate(deps, empty, entry);
     expect(calls.filter((c) => c === 'submitCreate')).toHaveLength(1);
   });
+
+  test('announces the submit only once the marker is on disk and the tx is signed', async () => {
+    const { deps, calls } = harness();
+    deps.log = (message) => calls.push(`log: ${message}`);
+    await execCreate(deps, empty, entry);
+
+    // A kill after this line is always recoverable through `status`.
+    expect(calls).toEqual([
+      'prepareCreate',
+      'save(pending)',
+      'sign',
+      'log: … submitting fix-142',
+      'submitCreate',
+      'save(clean)',
+      'log: created fix-142 -> task-1',
+    ]);
+  });
+});
+
+describe('fault pause (GIBBON_FAULT_PAUSE_MS) — the crash-test window', () => {
+  test('holds AFTER the submit and BEFORE anything is recorded', async () => {
+    const { deps, calls, saved } = harness();
+    deps.log = (message) => calls.push(`log: ${message}`);
+    deps.faultPauseMs = 8000;
+    let savesAtPause = -1;
+    deps.pause = async (ms) => {
+      calls.push(`pause(${ms})`);
+      savesAtPause = saved.length;
+    };
+
+    await execCreate(deps, empty, entry);
+
+    expect(calls).toEqual([
+      'prepareCreate',
+      'save(pending)',
+      'sign',
+      'log: … submitting fix-142',
+      'submitCreate',
+      'log: … fault pause 8s: fix-142 submitted, not yet recorded',
+      'pause(8000)',
+      'save(clean)',
+      'log: created fix-142 -> task-1',
+    ]);
+    // A kill during the pause finds only the pending marker on disk: the
+    // funds moved, the task is unrecorded, so apply must refuse and status adopt.
+    const onDisk = saved[savesAtPause - 1];
+    expect(onDisk?.pending).toHaveLength(1);
+    expect(onDisk?.tasks['fix-142']).toBeUndefined();
+  });
+
+  test('is off by default: no pause, no extra output', async () => {
+    const { deps, calls } = harness();
+    deps.log = (message) => calls.push(`log: ${message}`);
+    deps.pause = async () => {
+      calls.push('pause');
+    };
+
+    await execCreate(deps, empty, entry);
+
+    expect(calls).not.toContain('pause');
+    expect(calls.some((c) => c.includes('fault pause'))).toBe(false);
+  });
+
+  test('applies to refunds too, before the task is forgotten', async () => {
+    const { deps, calls } = harness();
+    deps.faultPauseMs = 3000;
+    deps.pause = async (ms) => {
+      calls.push(`pause(${ms})`);
+    };
+    const tracked: SyncState = {
+      version: 1,
+      tasks: { 'fix-142': { taskId: 'task-1', lastAppliedHash: 'h', lastSyncedAt: 't' } },
+      pending: [],
+    };
+
+    await execRefund(deps, tracked, { id: 'fix-142', taskId: 'task-1' });
+
+    expect(calls).toEqual([
+      'prepareRefund',
+      'save(pending)',
+      'sign',
+      'submitRefund',
+      'pause(3000)',
+      'save(clean)',
+    ]);
+  });
+});
+
+describe('parseFaultPauseMs', () => {
+  test('unset or empty means off', () => {
+    expect(parseFaultPauseMs(undefined)).toBe(0);
+    expect(parseFaultPauseMs('')).toBe(0);
+    expect(parseFaultPauseMs('  ')).toBe(0);
+  });
+
+  test('accepts whole milliseconds in range', () => {
+    expect(parseFaultPauseMs('8000')).toBe(8000);
+    expect(parseFaultPauseMs(' 0 ')).toBe(0);
+    expect(parseFaultPauseMs('60000')).toBe(60000);
+  });
+
+  test('rejects anything else as a usage error instead of silently ignoring it', () => {
+    for (const bad of ['8s', '-1', '1.5', '60001', 'abc']) {
+      expect(() => parseFaultPauseMs(bad)).toThrow(/GIBBON_FAULT_PAUSE_MS/);
+    }
+  });
 });
 
 describe('execUpdate — cheap and unsigned', () => {
@@ -187,6 +299,26 @@ describe('execRefund', () => {
     ]);
     expect(result.state.tasks['fix-142']).toBeUndefined();
     expect(result.state.pending).toHaveLength(0);
+  });
+
+  test('announces the refund submit after the marker and the signature', async () => {
+    const { deps, calls } = harness();
+    deps.log = (message) => calls.push(`log: ${message}`);
+    const tracked: SyncState = {
+      version: 1,
+      tasks: { 'fix-142': { taskId: 'task-1', lastAppliedHash: 'h', lastSyncedAt: 't' } },
+      pending: [],
+    };
+
+    await execRefund(deps, tracked, { id: 'fix-142', taskId: 'task-1' });
+
+    expect(calls.slice(0, 5)).toEqual([
+      'prepareRefund',
+      'save(pending)',
+      'sign',
+      'log: … submitting fix-142 (refund)',
+      'submitRefund',
+    ]);
   });
 });
 

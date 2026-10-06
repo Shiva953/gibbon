@@ -29,7 +29,7 @@ export default function Overview() {
           <p className="flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-dim">
             <span className="flex items-center gap-2">
               <span aria-hidden="true" className="size-2 bg-leaf" />
-              92 tests passing
+              100 tests passing
             </span>
             <span className="flex items-center gap-2">
               <span aria-hidden="true" className="size-2 bg-leaf" />

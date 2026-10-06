@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline/promises';
 import { GibworkAmbiguousSubmitError } from '@gibwork/sdk';
 import { computePlan } from '../lib/diff.js';
 import { CliError, EXIT, normalizeError } from '../lib/errors.js';
-import { execCreate, execRefund, execUpdate } from '../lib/executor.js';
+import { execCreate, execRefund, execUpdate, parseFaultPauseMs } from '../lib/executor.js';
 import type { ExecutorDeps } from '../lib/executor.js';
 import { fetchLiveTasks } from '../lib/live.js';
 import { Pacer } from '../lib/pacer.js';
@@ -77,6 +77,9 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
     throw new CliError('--json requires --yes, because apply cannot prompt.', 'USAGE_ERROR', EXIT.USAGE);
   }
 
+  // Crash-test switch. Parsed up front so a bad value fails before any network call.
+  const faultPauseMs = parseFaultPauseMs(process.env.GIBBON_FAULT_PAUSE_MS);
+
   const initial = loadState();
 
   // The watchdog gate, before any network call or any money.
@@ -139,10 +142,18 @@ export async function applyCommand(runtime: Runtime, options: ApplyOptions): Pro
     ...(output.json || output.quiet
       ? {}
       : { log: (message: string) => process.stdout.write(`  ${message}\n`) }),
+    ...(faultPauseMs > 0 ? { faultPauseMs } : {}),
   };
 
   let unresolved = 0;
   if (!output.json && !output.quiet) process.stdout.write('\n');
+  if (faultPauseMs > 0) {
+    // Always said out loud: a run with injected pauses must never pass for a normal one.
+    process.stderr.write(
+      `  fault injection on (GIBBON_FAULT_PAUSE_MS=${faultPauseMs}): each submit is held ` +
+        'before it is recorded.\n',
+    );
+  }
 
   try {
     // Updates sign nothing, so running them first banks them against a later crash.

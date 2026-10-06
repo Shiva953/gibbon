@@ -22,7 +22,7 @@ function cancelled(): CliError {
 }
 
 /** Interruptible: a 35s pace wait must not swallow Ctrl-C. */
-const realSleep: Sleep = (ms, signal) =>
+export const realSleep: Sleep = (ms, signal) =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(cancelled());
