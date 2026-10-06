@@ -97,8 +97,17 @@ up where marked.
 | 3:16 | 100 tests, and how to install                                          |
 
 
-The screenshots below are frames from this video. All of them are in
-`[docs/screenshots/](docs/screenshots/)`.
+The demo is cut from three screen recordings. Here they are uncut, so any
+frame in the video or in this README can be checked against its source:
+
+| Recording | Length | What it is |
+| --- | --- | --- |
+| [01-plan-apply.mp4](https://drive.google.com/file/d/19qeeaNgjDgp5M2HWiJ_u0n4kjhrEm9wm/view?usp=sharing) | 4:21 | The first run, then the week of edits: every `plan` and `apply` |
+| [02-crash.mp4](https://drive.google.com/file/d/1M7YGSq0C_sJmBVWB1okwKuxg-lPdlSCX/view?usp=sharing) | 1:43 | The crash test: the kill mid-payment, then the recovery |
+| [03-import.mp4](https://drive.google.com/file/d/1qDDacM0g4JSCbjnhNyOi_7rHp7SAi0Yw/view?usp=sharing) | 0:55 | `import` into an empty folder, then `plan` |
+
+The screenshots below are frames from the video. All of them are in
+[docs/screenshots/](docs/screenshots/).
 
 ---
 
@@ -153,21 +162,32 @@ Gibwork calls it `6bb9ce03-...`, and Gibbon remembers which is which.
 
 ### Get the CLI
 
-Needs Node.js 22 or newer.
+Needs Node.js 22 or newer. You do not have to install anything globally: you
+can run Gibbon straight from this repository.
+
+**Run it from the repository**, with [Bun](https://bun.sh):
+
+```bash
+git clone https://github.com/Shiva953/gibbon
+cd gibbon
+bun install && bun run build
+
+node dist/index.js plan --profile stage     # run it from the repo
+alias gibbon="node $PWD/dist/index.js"      # optional: a short name for this shell
+```
+
+To skip the build step, Bun can run the source directly:
+`bun run src/index.ts plan --profile stage`.
+
+**Or install the `gibbon` command.** This also comes straight from GitHub, not
+from the npm registry:
 
 ```bash
 npm i -g github:Shiva953/gibbon
 ```
 
-Or build it from a clone, with [Bun](https://bun.sh):
-
-```bash
-git clone https://github.com/Shiva953/gibbon && cd gibbon
-bun install && bun run build
-alias gibbon="node $PWD/dist/index.js"
-```
-
-
+The rest of this README writes `gibbon`. From the repository, that is
+`node dist/index.js`, or the alias above.
 
 ### Set up your wallet
 
@@ -250,6 +270,8 @@ bounty, and at the second time you run anything.
 The demo's first run does the same with three bounties and one confirmation:
 
 ![First run in the demo: three bounties planned, one confirmation, three created. The counter reads 3 of 3 funded.](docs/screenshots/demo-first-run.png)
+
+Uncut recording of this run: [01-plan-apply.mp4](https://drive.google.com/file/d/19qeeaNgjDgp5M2HWiJ_u0n4kjhrEm9wm/view?usp=sharing) (4:21).
 
 ---
 
@@ -348,6 +370,8 @@ change, and one confirmation applies them.
 ![One plan showing all four changes: create e2e-tests, update fix-207, refund site-hero, and fix-213 blocked because a live bounty's amount cannot change.](docs/screenshots/demo-plan.png)
 
 ![One apply: fix-207 updated, e2e-tests created, site-hero refunded. The blocked bounty is skipped and never paid.](docs/screenshots/demo-apply.png)
+
+Uncut recording of both screens: [01-plan-apply.mp4](https://drive.google.com/file/d/19qeeaNgjDgp5M2HWiJ_u0n4kjhrEm9wm/view?usp=sharing) (4:21).
 
 ---
 
@@ -451,7 +475,8 @@ $ gibbon plan --profile stage
 No changes. bounties.yaml matches live Gibwork state.
 ```
 
-One crash, paid exactly once. To reproduce it, see
+One crash, paid exactly once. The uncut recording is
+[02-crash.mp4](https://drive.google.com/file/d/1M7YGSq0C_sJmBVWB1okwKuxg-lPdlSCX/view?usp=sharing) (1:43). To reproduce it, see
 [Crash-testing it yourself](#crash-testing-it-yourself).
 
 ### So when is each one right?
@@ -488,6 +513,8 @@ No changes. bounties.yaml matches live Gibwork state.
 ```
 
 ![Import in the demo: two live bounties written to bounties.yaml, then plan reports no changes, an exact copy.](docs/screenshots/demo-import.png)
+
+Uncut recording: [03-import.mp4](https://drive.google.com/file/d/1qDDacM0g4JSCbjnhNyOi_7rHp7SAi0Yw/view?usp=sharing) (0:55).
 
 > **Do not skip this.** A hand-written file has no link to the bounties you
 > already have, so `apply` would create every one of them again, with real
@@ -638,9 +665,11 @@ gibbon plan      # No changes.
 In the demo the kill lands after the payment and before it is recorded. `apply`
 [refuses to guess](docs/screenshots/demo-crash-refused.png), `status` adopts
 the bounty, and `plan` reports
-[no changes](docs/screenshots/demo-crash-paid-once.png): paid exactly once. The
-switch is off unless set, capped at 60 seconds, and `apply` warns whenever it
-is on.
+[no changes](docs/screenshots/demo-crash-paid-once.png): paid exactly once.
+Uncut recording: [02-crash.mp4](https://drive.google.com/file/d/1M7YGSq0C_sJmBVWB1okwKuxg-lPdlSCX/view?usp=sharing) (1:43).
+
+The switch is off unless set, capped at 60 seconds, and `apply` warns whenever
+it is on.
 
 ### Module map
 
@@ -850,7 +879,7 @@ and the import round trip. None touch the network or spend anything. A separate
 live suite does spend money, and is opt in: `GIBWORK_LIVE_TEST=1 bun test test/live`.
 
 The landing page, [gibbon-site.vercel.app](https://gibbon-site.vercel.app), is a
-Next.js app in `[site/](site/)`. Run it with `bun run site`.
+Next.js app in [site/](site/). Run it with `bun run site`.
 
 ---
 
