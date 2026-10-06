@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import { KeyNav, StatusLine, TopBar } from "@/components/shell";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const jetbrains = JetBrains_Mono({
@@ -13,6 +14,7 @@ const description =
   "Keep your Gibwork bounty backlog in one YAML file, preview every change, and never pay twice.";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title,
   description,
   openGraph: { title, description, type: "website" },

@@ -11,7 +11,7 @@ Keep your bounty backlog in one YAML file, preview every change, and never pay t
 **[How it works](#how-it-works)**  
 **[Architecture](#architecture)**  
 **[Cheat sheet](#cheat-sheet)**  
-**[Landing page](https://gibbon-site.vercel.app)**
+**[Landing page](https://gibbon-cli.vercel.app)**
 
 ---
 
@@ -878,7 +878,7 @@ bun install && bun run typecheck && bun run test && bun run build
 and the import round trip. None touch the network or spend anything. A separate
 live suite does spend money, and is opt in: `GIBWORK_LIVE_TEST=1 bun test test/live`.
 
-The landing page, [gibbon-site.vercel.app](https://gibbon-site.vercel.app), is a
+The landing page, [gibbon-cli.vercel.app](https://gibbon-cli.vercel.app), is a
 Next.js app in [site/](site/). Run it with `bun run site`.
 
 ---

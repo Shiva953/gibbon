@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Code, FilePanel, Terminal } from "@/components/code";
 import { Command } from "@/components/copy-button";
 import { Glyph } from "@/components/logo";
+import { ScenarioSwitch, type Scenario } from "@/components/scenario-switch";
 import { Stage } from "@/components/stage";
 import { INSTALL_COMMAND, REPO_URL } from "@/lib/site";
 
@@ -25,10 +26,32 @@ Plan: 1 to create, 0 to update, 0 to refund.
 [[p|$]] [[c|gibbon apply --profile stage]]
 `;
 
+/* Two ways in. Running from the repository needs nothing installed globally. */
+const WAYS: Scenario[] = [
+  {
+    id: "repo",
+    label: "from the repo",
+    caption: "Nothing installed globally. Needs Bun to build.",
+    panel: (
+      <div className="flex flex-col gap-1.5">
+        <Command label="Copy the clone command">{`git clone ${REPO_URL} && cd gibbon`}</Command>
+        <Command label="Copy the build command">bun install && bun run build</Command>
+        <Command label="Copy the alias command">{'alias gibbon="node $PWD/dist/index.js"'}</Command>
+      </div>
+    ),
+  },
+  {
+    id: "global",
+    label: "global command",
+    caption: "One line. It installs from GitHub, not the npm registry.",
+    panel: <Command label="Copy the install command">{INSTALL_COMMAND}</Command>,
+  },
+];
+
 const STEPS: { title: string; panel: ReactNode }[] = [
   {
-    title: "install",
-    panel: <Command label="Copy the install command">{INSTALL_COMMAND}</Command>,
+    title: "get the CLI",
+    panel: <ScenarioSwitch label="Ways to get the CLI" items={WAYS} />,
   },
   {
     title: "write bounties.yaml",
@@ -78,11 +101,11 @@ export default function InstallPage() {
         ))}
       </ol>
       <p className="mt-6 text-[12.5px] text-dim sm:pl-[3rem]">
-        Prefer a clone?{" "}
+        The full walkthrough is in the{" "}
         <a href={`${REPO_URL}#getting-started`} className="text-amber underline underline-offset-4">
-          Build from source
-        </a>{" "}
-        with Bun.
+          README
+        </a>
+        .
       </p>
     </Stage>
   );

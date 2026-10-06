@@ -45,7 +45,7 @@ blocked, `d` dim, `p` prompt, `c` typed command, `k` key.
 
 ## Deploying
 
-Live at [gibbon-site.vercel.app](https://gibbon-site.vercel.app), as the Vercel
+Live at [gibbon-cli.vercel.app](https://gibbon-cli.vercel.app), as the Vercel
 project `gibbon-site`. To ship a change, from this folder:
 
 ```bash

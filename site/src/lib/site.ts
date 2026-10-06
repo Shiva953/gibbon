@@ -2,6 +2,9 @@
 export const REPO_URL = "https://github.com/Shiva953/gibbon";
 export const INSTALL_COMMAND = "npm i -g github:Shiva953/gibbon";
 
+/** Where the site is served. Used for absolute URLs in link previews. */
+export const SITE_URL = "https://gibbon-cli.vercel.app";
+
 export const VERSION = "0.1.0";
 
 /**
