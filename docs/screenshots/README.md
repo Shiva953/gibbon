@@ -1,6 +1,6 @@
 # Screenshots
 
-Frames from the [demo video](https://drive.google.com/file/d/1xQmlN6PaTS_7JordPgERkuSaB2rDIz4C/view?usp=sharing).
+Frames from the [demo video](https://drive.google.com/file/d/1Ld6ab1CT0AdI5Eq7YtdY-96FvdrBph0b/view?usp=sharing).
 Every terminal in them is a real run against Gibwork stage.
 
 The demo is cut from three screen recordings, linked here uncut:

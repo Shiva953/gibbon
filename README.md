@@ -6,7 +6,7 @@
 
 Keep your bounty backlog in one YAML file, preview every change, and never pay twice.
 
-**[Watch the demo](https://drive.google.com/file/d/1xQmlN6PaTS_7JordPgERkuSaB2rDIz4C/view?usp=sharing)**  
+**[Watch the demo](https://drive.google.com/file/d/1Ld6ab1CT0AdI5Eq7YtdY-96FvdrBph0b/view?usp=sharing)**  
 **[Getting started](#getting-started)**  
 **[How it works](#how-it-works)**  
 **[Architecture](#architecture)**  
@@ -80,7 +80,7 @@ these four things:
 
 ## Demo
 
-**[Watch the demo (3:26)](https://drive.google.com/file/d/1xQmlN6PaTS_7JordPgERkuSaB2rDIz4C/view?usp=sharing)**.
+**[Watch the demo (3:26)](https://drive.google.com/file/d/1Ld6ab1CT0AdI5Eq7YtdY-96FvdrBph0b/view?usp=sharing)**.
 Every terminal in it is a real run against Gibwork stage, with real USDC, sped
 up where marked.
 
