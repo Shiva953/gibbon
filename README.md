@@ -904,5 +904,5 @@ having it.
 
 ## License
 
-MIT. Gibbon is a community tool built for the Gibwork Developer Hackathon. It
-is not an official Gibwork product.
+[MIT](LICENSE). Gibbon is a community tool built for the Gibwork Developer
+Hackathon. It is not an official Gibwork product.
