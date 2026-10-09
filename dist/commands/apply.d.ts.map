@@ -1,0 +1,1 @@
+{"version":3,"file":"apply.d.ts","sourceRoot":"","sources":["../../src/commands/apply.ts"],"names":[],"mappings":"AAWA,OAAO,KAAK,EAAE,OAAO,EAAE,MAAM,eAAe,CAAC;AAI7C,MAAM,WAAW,YAAY;IAC3B,IAAI,EAAE,MAAM,CAAC;IACb,iDAAiD;IACjD,GAAG,CAAC,EAAE,OAAO,CAAC;CACf;AA2CD;;;;;;;;GAQG;AACH,wBAAsB,YAAY,CAAC,OAAO,EAAE,OAAO,EAAE,OAAO,EAAE,YAAY,GAAG,OAAO,CAAC,IAAI,CAAC,CA0IzF"}

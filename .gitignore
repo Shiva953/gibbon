@@ -1,8 +1,7 @@
 # dependencies
 node_modules
 
-# build output
-dist
+# build output. dist/ is committed on purpose: see build.ts
 out
 *.tgz
 *.tsbuildinfo

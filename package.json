@@ -17,13 +17,11 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
     "dev": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test ./test/*.test.ts",
     "test:live": "bun test test/live",
     "site": "bun --cwd site run dev",
-    "prepare": "tsc",
     "prepublishOnly": "bun run build"
   },
   "keywords": [
